@@ -1,0 +1,72 @@
+# --- SYSTEM & MISC ---
+.DS_Store
+*.pem
+*.tmp
+temp.txt
+notificationListener.txt
+
+# --- WEB / NEXT.JS / NODE ---
+# Dependencies
+**/node_modules
+.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# Next.js & Production Build
+web/.next/
+web/out/
+web/build/
+/build
+/coverage
+
+# Debug Logs
+*.log
+*-debug.log*
+*-error.log*
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# Vercel & Clerk
+.vercel
+/.clerk/
+
+# --- DATABASE & SECRETS ---
+# CRITICAL: Do not push API keys for Gemini, Supabase, etc.
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env*
+
+# Prisma
+web/prisma/migrations/
+*.db
+*.db-journal
+
+# --- ANDROID ---
+# Gradle and Build folders
+android/.gradle/
+android/build/
+android/captures/
+android/.externalNativeBuild
+android/.cxx
+
+# Local config (Contains your specific SDK path)
+android/local.properties
+local.properties
+
+# Android Studio / IntelliJ files
+android/.idea/
+*.iml
+.idea/caches
+.idea/modules.xml
+.idea/workspace.xml
+.idea/navEditor.xml
+.idea/assetWizardSettings.xml

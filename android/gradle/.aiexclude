@@ -1,0 +1,18 @@
+# Exclude sensitive files
+local.properties
+**/*.jks
+**/*.keystore
+google-services.json
+
+# Exclude build and generated artifacts
+**/build/
+.gradle/
+*.apk
+*.aar
+
+# Exclude IDE settings
+.idea/
+
+# Exclude large assets if they aren't relevant to code logic
+**/assets/**/*.mp4
+**/assets/**/*.zip
