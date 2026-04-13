@@ -1,67 +1,50 @@
 package com.example.redex_expensetracker
 
 import android.content.Context
-import android.util.Log
-import androidx.work.CoroutineWorker
-import androidx.work.WorkerParameters
-import androidx.work.Constraints
-import androidx.work.NetworkType
-import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.WorkManager
+import androidx.work.*
+import java.util.concurrent.TimeUnit
 
 class TransactionWorker(
-    appContext: Context,
-    workerParams: WorkerParameters
-) : CoroutineWorker(appContext, workerParams) {
+    context: Context,
+    params: WorkerParameters
+) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
-        val database = AppDatabase.getDatabase(applicationContext)
-        val dao = database.transactionDao()
+        val dao = AppDatabase.getDatabase(applicationContext).transactionDao()
         val pending = dao.getAllPending()
 
-        if (pending.isEmpty()) return Result.success()
-
-        Log.d("RedexWorker", "Retrying ${pending.size} pending transactions...")
-
-        var allSuccessful = true
-        for (item in pending) {
-            val success = try {
-                HttpSender.sendToApi(
-                    amount = item.amount,
-                    date = item.date,
-                    description = item.description,
-                    merchantName = item.merchantName,
-                    category = item.category,
-                    source = item.source,
-                    type = item.type,
-                    timestamp = item.timestamp
-                )
-            } catch (e: Exception) {
-                false
-            }
-
-            if (success) {
-                dao.delete(item)
-                Log.d("RedexWorker", "Successfully synced transaction: ${item.id}")
-            } else {
-                allSuccessful = false
-            }
+        for (transaction in pending) {
+            val success = HttpSender.sendToApi(
+                amount = transaction.amount,
+                date = transaction.date,
+                description = transaction.description,
+                merchantName = transaction.merchantName,
+                category = transaction.category,
+                source = transaction.source,
+                type = transaction.type,
+                timestamp = transaction.timestamp
+            )
+            if (success) dao.delete(transaction)
         }
-
-        return if (allSuccessful) Result.success() else Result.retry()
+        return Result.success()
     }
 
     companion object {
         fun schedule(context: Context) {
-            val constraints = Constraints.Builder()
-                .setRequiredNetworkType(NetworkType.CONNECTED)
-                .build()
-
             val request = OneTimeWorkRequestBuilder<TransactionWorker>()
-                .setConstraints(constraints)
+                .setConstraints(
+                    Constraints.Builder()
+                        .setRequiredNetworkType(NetworkType.CONNECTED)
+                        .build()
+                )
+                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 15, TimeUnit.MINUTES)
                 .build()
 
-            WorkManager.getInstance(context).enqueue(request)
+            WorkManager.getInstance(context).enqueueUniqueWork(
+                "transaction_retry",
+                ExistingWorkPolicy.KEEP,
+                request
+            )
         }
     }
 }

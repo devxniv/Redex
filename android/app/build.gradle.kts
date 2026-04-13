@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlinAndroid)
@@ -17,6 +19,13 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        
+        val props = Properties()
+        val propsFile = rootProject.file("local.properties")
+        if (propsFile.exists()) {
+            props.load(propsFile.inputStream())
+        }
+        buildConfigField("String", "REDEX_API_SECRET", "\"${props.getProperty("REDEX_API_SECRET") ?: ""}\"")
     }
 
     buildTypes {

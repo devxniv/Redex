@@ -86,7 +86,7 @@ object HttpSender {
                 put("type", type)
                 put("timestamp", timestamp)
             }.toString()
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             return@withContext false
         }
 
@@ -98,7 +98,7 @@ object HttpSender {
                 .header("X-Redex-Api-Secret", BuildConfig.REDEX_API_SECRET)
                 .post(requestBody)
                 .build()
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             return@withContext false
         }
 
