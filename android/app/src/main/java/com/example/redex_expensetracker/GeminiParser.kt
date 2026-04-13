@@ -22,22 +22,24 @@ import java.util.Locale
 object GeminiParser {
     private const val TAG = "GeminiParser"
 
-    private val model = GenerativeModel(
-        modelName = "gemini-3-flash-preview",
-        apiKey = BuildConfig.GEMINI_API_KEY,
-        generationConfig = generationConfig {
-            responseMimeType = "application/json"
-        },
-        safetySettings = listOf(
-            SafetySetting(HarmCategory.HARASSMENT, BlockThreshold.ONLY_HIGH),
-            SafetySetting(HarmCategory.HATE_SPEECH, BlockThreshold.ONLY_HIGH),
-            SafetySetting(HarmCategory.SEXUALLY_EXPLICIT, BlockThreshold.ONLY_HIGH),
-            SafetySetting(HarmCategory.DANGEROUS_CONTENT, BlockThreshold.ONLY_HIGH)
-        ),
-        systemInstruction = content { 
-            text("You are a financial data extractor. You MUST always return a single JSON object. NEVER return an array, even if you find multiple potential transactions. Pick the most relevant one.")
-        }
-    )
+    private val model by lazy {
+        GenerativeModel(
+            modelName = "gemini-1.5-flash",
+            apiKey = BuildConfig.GEMINI_API_KEY,
+            generationConfig = generationConfig {
+                responseMimeType = "application/json"
+            },
+            safetySettings = listOf(
+                SafetySetting(HarmCategory.HARASSMENT, BlockThreshold.ONLY_HIGH),
+                SafetySetting(HarmCategory.HATE_SPEECH, BlockThreshold.ONLY_HIGH),
+                SafetySetting(HarmCategory.SEXUALLY_EXPLICIT, BlockThreshold.ONLY_HIGH),
+                SafetySetting(HarmCategory.DANGEROUS_CONTENT, BlockThreshold.ONLY_HIGH)
+            ),
+            systemInstruction = content { 
+                text("You are a financial data extractor. You MUST always return a single JSON object. NEVER return an array, even if you find multiple potential transactions. Pick the most relevant one.")
+            }
+        )
+    }
 
     private fun getPromptPrefix(): String {
         val today = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
@@ -229,63 +231,76 @@ object GeminiParser {
 
     suspend fun parseFromImage(imageBytes: ByteArray): TransactionData? = withContext(Dispatchers.IO) {
         val rawBitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size) ?: return@withContext null
-        val resizedBitmap = resizeBitmap(rawBitmap)
+        
+        try {
+            val resizedBitmap = resizeBitmap(rawBitmap)
+            rawBitmap.recycle()
 
-        // Compress to JPEG to reduce payload size
-        val outputStream = ByteArrayOutputStream()
-        resizedBitmap.compress(Bitmap.CompressFormat.JPEG, 80, outputStream)
-        val compressedBytes = outputStream.toByteArray()
-        val finalBitmap = BitmapFactory.decodeByteArray(compressedBytes, 0, compressedBytes.size) ?: return@withContext null
+            // Compress to JPEG to reduce payload size
+            val outputStream = ByteArrayOutputStream()
+            resizedBitmap.compress(Bitmap.CompressFormat.JPEG, 80, outputStream)
+            resizedBitmap.recycle()
+            
+            val compressedBytes = outputStream.toByteArray()
+            val finalBitmap = BitmapFactory.decodeByteArray(compressedBytes, 0, compressedBytes.size) ?: return@withContext null
 
-        val prompt = getPromptPrefix() + """
-            This is a screenshot from a UPI or banking app.
-            It could be a payment sent (EXPENSE) OR money received (INCOME).
-            Look carefully at the screen:
-            - If it shows "You paid", "Paid to", "Sent to", "Debited" → type is EXPENSE
-            - If it shows "You received", "Received from", "Credited", "paid you" → type is INCOME
-            Determine the correct type from the actual content, do NOT assume.
-            Return a single JSON object, NOT an array.
-        """.trimIndent()
+            val prompt = getPromptPrefix() + """
+                This is a screenshot from a UPI or banking app.
+                It could be a payment sent (EXPENSE) OR money received (INCOME).
+                Look carefully at the screen:
+                - If it shows "You paid", "Paid to", "Sent to", "Debited" → type is EXPENSE
+                - If it shows "You received", "Received from", "Credited", "paid you" → type is INCOME
+                Determine the correct type from the actual content, do NOT assume.
+                Return a single JSON object, NOT an array.
+            """.trimIndent()
 
-        var lastException: Exception? = null
-        repeat(3) { attempt ->
             try {
-                val response = model.generateContent(content {
-                    image(finalBitmap)
-                    text(prompt)
-                })
+                var lastException: Exception? = null
+                repeat(3) { attempt ->
+                    try {
+                        val response = model.generateContent(content {
+                            image(finalBitmap)
+                            text(prompt)
+                        })
 
-                val rawString = response.text?.trim() ?: return@repeat
-                Log.d(TAG, "Raw Gemini image response (Attempt ${attempt + 1}): $rawString")
+                        val rawString = response.text?.trim() ?: return@repeat
+                        Log.d(TAG, "Raw Gemini image response (Attempt ${attempt + 1}): $rawString")
 
-                val cleanedJson = extractJson(rawString)
+                        val cleanedJson = extractJson(rawString)
 
-                val json = if (cleanedJson.startsWith("[")) {
-                    val arr = org.json.JSONArray(cleanedJson)
-                    if (arr.length() == 0) return@repeat
-                    arr.getJSONObject(0)
-                } else {
-                    JSONObject(cleanedJson)
+                        val json = if (cleanedJson.startsWith("[")) {
+                            val arr = org.json.JSONArray(cleanedJson)
+                            if (arr.length() == 0) return@repeat
+                            arr.getJSONObject(0)
+                        } else {
+                            JSONObject(cleanedJson)
+                        }
+
+                        if (!json.optBoolean("is_transaction", false)) return@withContext null
+
+                        return@withContext TransactionData(
+                            amount = parseAmount(json.opt("amount")),
+                            date = json.optString("date", ""),
+                            description = json.optString("description", "No description"),
+                            merchantName = json.optString("merchantName", "Unknown"),
+                            category = normalizeCategory(json.optString("category")),
+                            type = parseType(json.optString("type"))
+                        )
+                    } catch (e: Exception) {
+                        lastException = e
+                        Log.w(TAG, "Attempt ${attempt + 1} failed: ${e.message}")
+                        if (attempt < 2) delay(2000L)
+                    }
                 }
-
-                if (!json.optBoolean("is_transaction", false)) return@withContext null
-
-                return@withContext TransactionData(
-                    amount = parseAmount(json.opt("amount")),
-                    date = json.optString("date", ""),
-                    description = json.optString("description", "No description"),
-                    merchantName = json.optString("merchantName", "Unknown"),
-                    category = normalizeCategory(json.optString("category")),
-                    type = parseType(json.optString("type"))
-                )
-            } catch (e: Exception) {
-                lastException = e
-                Log.w(TAG, "Attempt ${attempt + 1} failed: ${e.message}")
-                if (attempt < 2) delay(2000L)
+                Log.e(TAG, "All attempts failed: ${lastException?.message}")
+                null
+            } finally {
+                finalBitmap.recycle()
             }
+        } catch (e: Exception) {
+            Log.e(TAG, "Bitmap processing error: ${e.message}")
+            null
         }
-        Log.e(TAG, "All attempts failed: ${lastException?.message}")
-        null
     }
 }
 

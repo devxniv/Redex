@@ -1,7 +1,8 @@
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.android.kotlin)
+    alias(libs.plugins.kotlinAndroid)
     alias(libs.plugins.secrets.gradle.plugin)
+    kotlin("kapt")
 }
 
 android {
@@ -39,11 +40,11 @@ android {
     kotlinOptions {
         jvmTarget = "21"
     }
+}
 
-    secrets {
-        propertiesFileName = "local.properties"
-        defaultPropertiesFileName = "local.defaults.properties"
-    }
+secrets {
+    propertiesFileName = "local.properties"
+    defaultPropertiesFileName = "local.defaults.properties"
 }
 
 dependencies {
@@ -59,4 +60,12 @@ dependencies {
     implementation(libs.json)
     implementation(libs.generativeai)
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0")
+    
+    // Room
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    kapt(libs.androidx.room.compiler)
+
+    // WorkManager
+    implementation(libs.androidx.work.runtime.ktx)
 }

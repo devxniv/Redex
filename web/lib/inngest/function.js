@@ -2,6 +2,10 @@ import { inngest } from "./client";
 import { db } from "@/lib/prisma";
 import EmailTemplate from "@/emails/template";
 import { sendEmail } from "@/actions/send-email";
+import {
+  validateMonthlyReportData,
+  validateBudgetAlertData,
+} from "@/lib/email-validation";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 // 1. Recurring Transaction Processing with Throttling
@@ -191,17 +195,37 @@ export const generateMonthlyReports = inngest.createFunction(
         } catch (e) {
           insights = ["Track your spending to see patterns."];
         }
+
+        // Validate data before rendering email
+        const emailData = {
+          stats,
+          month: monthName,
+          insights,
+        };
+
+        try {
+          validateMonthlyReportData({
+            userName: user.name,
+            data: emailData,
+          });
+        } catch (validationError) {
+          console.error(
+            `Skipping email for user ${user.id}: ${validationError.message}`,
+          );
+          return {
+            skipped: true,
+            reason: "Data validation failed",
+            error: validationError.message,
+          };
+        }
+
         await sendEmail({
           to: user.email,
           subject: `Your Monthly Financial Report - ${monthName}`,
           react: EmailTemplate({
             userName: user.name,
             type: "monthly-report",
-            data: {
-              stats,
-              month: monthName,
-              insights,
-            },
+            data: emailData,
           }),
         });
       });
@@ -263,18 +287,33 @@ export const checkBudgetAlerts = inngest.createFunction(
           (!budget.lastAlertSent ||
             isNewMonth(new Date(budget.lastAlertSent), new Date()))
         ) {
+          // Validate budget alert data before sending
+          const alertData = {
+            percentageUsed,
+            budgetAmount: Number(budgetAmount).toFixed(2),
+            totalExpenses: Number(totalExpenses).toFixed(2),
+            accountName: defaultAccount.name,
+          };
+
+          try {
+            validateBudgetAlertData({
+              userName: budget.user.name,
+              data: alertData,
+            });
+          } catch (validationError) {
+            console.error(
+              `Skipping budget alert for user ${budget.userId}: ${validationError.message}`,
+            );
+            return;
+          }
+
           await sendEmail({
             to: budget.user.email,
             subject: `Budget Alert for ${defaultAccount.name}`,
             react: EmailTemplate({
               userName: budget.user.name,
               type: "budget-alert",
-              data: {
-                percentageUsed,
-                budgetAmount: Number(budgetAmount).toFixed(2),
-                totalExpenses: Number(totalExpenses).toFixed(2),
-                accountName: defaultAccount.name,
-              },
+              data: alertData,
             }),
           });
 

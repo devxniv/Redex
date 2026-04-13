@@ -58,8 +58,8 @@ class RedexNotificationListener : NotificationListenerService() {
         // 1. Basic Logging
         Log.d(TAG, "Incoming: [$packageName] | $fullContent")
 
-        // 2. Filter for Payment Apps
-        if (PAYMENT_PACKAGES.contains(packageName)) {
+        // 2. Filter for Whitelisted Payment Apps
+        if (WhitelistManager.isWhitelisted(this, packageName)) {
 
             // 3. Filter: Must contain financial indicators (Currency or Keywords)
             val hasCurrency = fullContent.contains("₹") || fullContent.contains("Rs", ignoreCase = true)
@@ -95,6 +95,7 @@ class RedexNotificationListener : NotificationListenerService() {
                     Log.d(TAG, "Gemini Parsed: ${transaction.amount} at ${transaction.merchantName} (${transaction.category})")
 
                     HttpSender.postTransaction(
+                            context = this@RedexNotificationListener,
                             amount = transaction.amount,
                             date = transaction.date,
                             description = transaction.description,

@@ -8,16 +8,51 @@ import {
   Section,
   Text,
 } from "@react-email/components";
+import { validateEmailData } from "@/lib/email-validation";
 
+/**
+ * Email Template Component
+ * Renders financial report and alert emails with built-in data validation
+ *
+ * @param {Object} props
+ * @param {string} props.userName - User's name
+ * @param {string} props.type - Email type (monthly-report, budget-alert)
+ * @param {Object} props.data - Email-specific data
+ * @returns {JSX.Element|null} - Rendered email or error fallback
+ */
 export default function EmailTemplate({
   userName = "",
   type = "monthly-report",
   data = {},
 }) {
-  // Common Data Extraction
-  const stats = data?.stats || {};
+  // Validate data before rendering to prevent partial/broken emails
+  const validationResult = validateEmailData({ type, data, userName });
+
+  // Return error fallback if validation fails
+  if (!validationResult) {
+    console.error(
+      `Cannot render email: validation failed for type="${type}", userName="${userName}"`,
+    );
+    return (
+      <Html>
+        <Head />
+        <Body style={styles.body}>
+          <Container style={styles.container}>
+            <Text style={styles.text}>
+              We encountered an issue generating your email. Please contact
+              support if this continues.
+            </Text>
+          </Container>
+        </Body>
+      </Html>
+    );
+  }
+
+  // Use validated data
+  const validatedData = validationResult.data;
+  const stats = validatedData?.stats || {};
   const byCategory = stats.byCategory || {};
-  const insights = data?.insights || [];
+  const insights = validatedData?.insights || [];
   const totalIncome = Number(stats.totalIncome) || 0;
   const totalExpenses = Number(stats.totalExpenses) || 0;
   const netSavings = totalIncome - totalExpenses;
