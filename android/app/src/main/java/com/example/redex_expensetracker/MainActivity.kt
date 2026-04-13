@@ -21,6 +21,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btnTest).setOnClickListener {
             lifecycleScope.launch {
                 HttpSender.postTransaction(
+                    context = this@MainActivity,
                     amount = 0.0,
                     date = "2024-01-01",
                     description = "Hello from Android!",

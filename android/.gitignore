@@ -1,18 +1,48 @@
+
+# Build & Output Artifacts
+
+.gradle/
+**/build/
+/captures/
+*.apk
+*.bundle
+*.flat
+.kotlin/
+
+# Native Build (C/C++)
+.externalNativeBuild/
+.cxx/
+
+
+# IDE & System Files (Android Studio, VS Code, IntelliJ)
+.idea/
 *.iml
-.gradle
-/local.properties
-/.idea/
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
+.vscode/
 .DS_Store
-/build
-/app/build
-/.kotlin
-/captures
-.externalNativeBuild
-.cxx
+Thumbs.db
+
+# Explicitly ignore common internal IDE state
+.idea/caches/
+.idea/libraries/
+.idea/workspace.xml
+.idea/navEditor.xml
+.idea/assetWizardSettings.xml
+.idea/modules.xml
+
+
+# Local Machine Configurations (DO NOT SHARE)
+
 local.properties
+local.defaults.properties
+
+
+# Secrets, Security & Signing
+
+# Keep your signing keys and API secrets private
+*.jks
+*.keystore
+secrets.xml
+*.env
+
+# If you add Firebase later, consider ignoring this if it contains secrets
+# google-services.json

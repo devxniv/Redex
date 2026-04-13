@@ -18,32 +18,28 @@ const aj = arcjet({
       mode: "LIVE",
     }),
     detectBot({
-      mode: "LIVE", // will block requests. Use "DRY_RUN" to log only
+      mode: "LIVE", // Blocks malicious bots. Use "DRY_RUN" to log only
       allow: [
-        "CATEGORY:SEARCH_ENGINE", // Google, Bing, etc
-        "GO_HTTP", // For Inngest
-        // See the full list at https://arcjet.com/bot-list
+        "CATEGORY:SEARCH_ENGINE", // Google, Bing, Yandex, Baidu, etc
+        "CATEGORY:MONITORING", // Uptime monitors, health checks
+        "CATEGORY:PREVIEW", // Link preview tools (Discord, Slack embeds)
+        "CATEGORY:ANALYTICS", // Analytics services, Mixpanel, Amplitude
+        "CATEGORY:SOCIAL_MEDIA", // Twitter/X, Facebook, LinkedIn crawlers
+        "GO_HTTP", // Go HTTP client (for Inngest)
+        "CHROME", // Chrome browser
+        "FIREFOX", // Firefox browser
+        "SAFARI", // Safari browser
+        "CURL", // curl requests (legitimate API clients)
       ],
     }),
   ],
 });
 
-// Create base Clerk middleware
-const clerk = clerkMiddleware(async (auth, req) => {
-  const { userId } = await auth();
-
-  if (!userId && isProtectedRoute(req)) {
-    const { redirectToSignIn } = await auth();
-    return redirectToSignIn();
-  }
-
-  return NextResponse.next();
-});
-
 // Create base middleware that chains ArcJet and Clerk
-const baseMiddleware = createMiddleware(aj, clerk);
+const arcjetMiddleware = createMiddleware(aj);
 
-export default async function middleware(req) {
+// Create combined middleware with Clerk
+export default clerkMiddleware(async (auth, req) => {
   const { pathname } = req.nextUrl;
 
   // 1. BYPASS FOR MOBILE APP
@@ -52,9 +48,15 @@ export default async function middleware(req) {
     return NextResponse.next();
   }
 
-  // 2. RUN NORMAL PROTECTION FOR EVERYTHING ELSE
-  return baseMiddleware(req);
-}
+  // 2. CHECK PROTECTED ROUTES
+  const { userId } = await auth();
+  if (!userId && isProtectedRoute(req)) {
+    return auth().redirectToSignIn();
+  }
+
+  // 3. RUN ARCJET PROTECTION FOR EVERYTHING ELSE
+  return arcjetMiddleware(req);
+});
 
 export const config = {
   matcher: [

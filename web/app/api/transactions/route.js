@@ -1,7 +1,6 @@
 import { db } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
-import { categorizeTransaction } from "@/lib/categorizer";
 
 export async function POST(req) {
   try {
