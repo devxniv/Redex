@@ -14,7 +14,7 @@ import android.content.Context
 object HttpSender {
 
     private const val TAG = "RedexHTTP"
-    private const val SERVER_URL = "https://confining-unsightly-conclude.ngrok-free.dev/api/transactions"
+    private const val SERVER_URL = BuildConfig.SERVER_URL;
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)

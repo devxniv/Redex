@@ -55,13 +55,12 @@ class RedexNotificationListener : NotificationListenerService() {
         // Combine title and body for a complete context
         val fullContent = "Title: $title | Content: $body"
 
-        // 1. Basic Logging
-        Log.d(TAG, "Incoming: [$packageName] | $fullContent")
-
-        // 2. Filter for Whitelisted Payment Apps
+        // Filter for Whitelisted Payment Apps
         if (WhitelistManager.isWhitelisted(this, packageName)) {
+            // Basic Logging - only for whitelisted apps
+            Log.d(TAG, "Whitelisted Notification: [$packageName] | $fullContent")
 
-            // 3. Filter: Must contain financial indicators (Currency or Keywords)
+            // Filter: Must contain financial indicators (Currency or Keywords)
             val hasCurrency = fullContent.contains("₹") || fullContent.contains("Rs", ignoreCase = true)
             val hasKeywords = listOf("paid", "sent", "received", "spent", "debited", "credited", "payment")
                     .any { fullContent.contains(it, ignoreCase = true) }

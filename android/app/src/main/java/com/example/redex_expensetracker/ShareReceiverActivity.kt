@@ -39,9 +39,24 @@ class ShareReceiverActivity : AppCompatActivity() {
     private fun handleSharedImage(intent: Intent) {
         val imageUri = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
         
-        // Safety 1: Caller Verification (Logging for Examiner)
-        val callingPkg = callingActivity?.packageName
-        Log.d(TAG, "Image shared from: $callingPkg")
+        // Whitelist Enforcement
+        val referrerPkg = referrer?.host ?: ""
+        val callingPkg = (callingActivity?.packageName ?: referrerPkg).trim()
+        
+        Log.d(TAG, "Share request from: '$callingPkg' (Referrer: $referrer)")
+
+        // If we identify the app and it's NOT whitelisted, block it.
+        if (callingPkg.isNotEmpty() && !WhitelistManager.isWhitelisted(this, callingPkg)) {
+            Log.w(TAG, "Blocked share from non-whitelisted app: $callingPkg")
+            Toast.makeText(this, "App ($callingPkg) is not whitelisted in Redex", Toast.LENGTH_LONG).show()
+            finish()
+            return
+        }
+        
+        // If we can't identify the app, we log a warning but proceed to avoid blocking legitimate apps
+        if (callingPkg.isEmpty()) {
+            Log.w(TAG, "Proceeding with unknown source (Package name could not be determined)")
+        }
 
         if (imageUri != null) {
             Log.d(TAG, "Received shared image: $imageUri")

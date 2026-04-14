@@ -8,7 +8,7 @@ const aj = arcjet({
     // Detect and block malicious bots
     detectBot({
       mode: "LIVE",
-      allow: ["CATEGORY:SEARCH_ENGINE", "CATEGORY:MONITORING", "GO_HTTP"],
+      allow: ["CATEGORY:SEARCH_ENGINE"],
     }),
     // Rate limiting specifically for collection creation
     tokenBucket({

@@ -132,7 +132,9 @@ export const triggerRecurringTransactions = inngest.createFunction(
 // 2. Monthly Report Generation
 async function generateFinancialInsights(stats, month) {
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-  const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+  const model = genAI.getGenerativeModel({
+    model: "gemini-2.5-flash",
+  });
 
   const prompt = `
     Analyze this financial data and provide 3 concise, actionable insights.

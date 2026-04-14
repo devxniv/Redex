@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.Log
 import androidx.core.graphics.scale
+import com.example.redex_expensetracker.BuildConfig
 import com.google.ai.client.generativeai.GenerativeModel
 import com.google.ai.client.generativeai.type.BlockThreshold
 import com.google.ai.client.generativeai.type.HarmCategory
@@ -24,7 +25,7 @@ object GeminiParser {
 
     private val model by lazy {
         GenerativeModel(
-            modelName = "gemini-1.5-flash",
+            modelName = "gemini-3-flash-preview",
             apiKey = BuildConfig.GEMINI_API_KEY,
             generationConfig = generationConfig {
                 responseMimeType = "application/json"
@@ -58,6 +59,9 @@ object GeminiParser {
           
           A transaction is anything where money is spent, received, or moved. 
           If you see an amount and a merchant/bank name, it IS a transaction.
+          
+          If the date is relative (e.g. "Today", "Yesterday", "2 days ago"), 
+          convert it to YYYY-MM-DD based on today's date ($today).
           
           For the category field, you MUST return ONLY one of these exact values:
           housing, transportation, groceries, utilities, entertainment, food, 
@@ -230,18 +234,36 @@ object GeminiParser {
     }
 
     suspend fun parseFromImage(imageBytes: ByteArray): TransactionData? = withContext(Dispatchers.IO) {
-        val rawBitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size) ?: return@withContext null
+        // Optimized bitmap decoding with inSampleSize to save memory
+        val options = BitmapFactory.Options().apply {
+            inJustDecodeBounds = true
+        }
+        BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size, options)
+        
+        // Calculate inSampleSize
+        val reqWidth = 512
+        val reqHeight = 512
+        var inSampleSize = 1
+        if (options.outHeight > reqHeight || options.outWidth > reqWidth) {
+            val halfHeight = options.outHeight / 2
+            val halfWidth = options.outWidth / 2
+            while (halfHeight / inSampleSize >= reqHeight && halfWidth / inSampleSize >= reqWidth) {
+                inSampleSize *= 2
+            }
+        }
+        
+        options.inJustDecodeBounds = false
+        options.inSampleSize = inSampleSize
+        
+        val rawBitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size, options) ?: return@withContext null
         
         try {
-            val resizedBitmap = resizeBitmap(rawBitmap)
+            // Compress directly to reduce payload size without double resize
+            val outputStream = ByteArrayOutputStream()
+            rawBitmap.compress(Bitmap.CompressFormat.JPEG, 80, outputStream)
+            val compressedBytes = outputStream.toByteArray()
             rawBitmap.recycle()
 
-            // Compress to JPEG to reduce payload size
-            val outputStream = ByteArrayOutputStream()
-            resizedBitmap.compress(Bitmap.CompressFormat.JPEG, 80, outputStream)
-            resizedBitmap.recycle()
-            
-            val compressedBytes = outputStream.toByteArray()
             val finalBitmap = BitmapFactory.decodeByteArray(compressedBytes, 0, compressedBytes.size) ?: return@withContext null
 
             val prompt = getPromptPrefix() + """

@@ -26,6 +26,7 @@ android {
             props.load(propsFile.inputStream())
         }
         buildConfigField("String", "REDEX_API_SECRET", "\"${props.getProperty("REDEX_API_SECRET") ?: ""}\"")
+        buildConfigField("String", "GEMINI_API_KEY", "\"${props.getProperty("GEMINI_API_KEY") ?: ""}\"")
     }
 
     buildTypes {
@@ -48,6 +49,9 @@ android {
     }
     kotlinOptions {
         jvmTarget = "21"
+    }
+    kotlin {
+        jvmToolchain(21)
     }
 }
 

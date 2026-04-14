@@ -6,6 +6,18 @@
     <!-- Network Permission -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <queries>
+        <package android:name="com.google.android.apps.nbu.paisa.user" />
+        <package android:name="com.phonepe.app" />
+        <package android:name="net.one97.paytm" />
+        <package android:name="in.org.npci.upiapp" />
+        <package android:name="com.sbi.upi" />
+        <package android:name="com.amazon.mShop.android.shopping" />
+        <package android:name="com.axis.mobile" />
+        <package android:name="com.csam.icici.bank.imobile" />
+        <package android:name="com.snapwork.hdfc" />
+    </queries>
+
     <application
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -23,6 +35,11 @@
             android:name=".SettingsActivity"
             android:exported="false"
             android:label="Monitoring Settings" />
+
+        <activity
+            android:name=".WhitelistSettingsActivity"
+            android:exported="false"
+            android:label="App Whitelist" />
 
         <activity
             android:name=".MainActivity"
@@ -47,7 +64,8 @@
         <activity
             android:name=".ShareReceiverActivity"
             android:exported="true"
-            android:theme="@style/Theme.Transparent">
+            android:theme="@style/Theme.Transparent"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden">
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />

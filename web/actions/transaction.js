@@ -227,11 +227,28 @@ export async function getUserTransactions(query = {}) {
   }
 }
 
+// Retry helper for rate limiting
+async function generateWithRetry(model, content, retries = 2) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await model.generateContent(content);
+    } catch (error) {
+      if (error?.status === 429 && i < retries - 1) {
+        const delay = 10000; // 10s is more reasonable UX
+        console.log(`Rate limited. Retrying in ${delay / 1000}s...`);
+        await new Promise((res) => setTimeout(res, delay));
+      } else {
+        throw error; // don't retry other errors (404, 400, etc.)
+      }
+    }
+  }
+}
+
 // Scan Receipt
 export async function scanReceipt(file) {
   try {
     const model = genAI.getGenerativeModel({
-      model: "gemini-3-flash-preview",
+      model: "gemini-2.5-flash",
       generationConfig: {
         responseMimeType: "application/json",
       },
@@ -262,7 +279,7 @@ export async function scanReceipt(file) {
       If its not a receipt, return an empty object
     `;
 
-    const result = await model.generateContent([
+    const result = await generateWithRetry(model, [
       prompt,
       {
         inlineData: {
