@@ -5,6 +5,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
+import okhttp3.Protocol
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
@@ -14,12 +15,13 @@ import android.content.Context
 object HttpSender {
 
     private const val TAG = "RedexHTTP"
-    private const val SERVER_URL = BuildConfig.SERVER_URL;
+    private val SERVER_URL = BuildConfig.SERVER_URL
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(10, TimeUnit.SECONDS)
         .writeTimeout(10, TimeUnit.SECONDS)
+        .protocols(listOf(Protocol.HTTP_1_1))
         .build()
 
     /**
@@ -96,9 +98,11 @@ object HttpSender {
                 .url(SERVER_URL)
                 .header("User-Agent", "Redex-Android")
                 .header("X-Redex-Api-Secret", BuildConfig.REDEX_API_SECRET)
+                .header("Connection", "close")
                 .post(requestBody)
                 .build()
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.e(TAG, "Request build failed: ${e.message}")
             return@withContext false
         }
 
