@@ -1,6 +1,7 @@
 {
   "name": "redex",
   "version": "0.1.0",
+  "type": "module",
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
@@ -30,10 +31,10 @@
     "date-fns": "^3.0.0",
     "inngest": "^3.35.1",
     "lucide-react": "^0.487.0",
-    "next": "15.2.3",
-    "react": "19.1.0",
+    "next": "^16.2.4",
+    "react": "^19.2.5",
     "react-day-picker": "^9.0.0",
-    "react-dom": "19.1.0",
+    "react-dom": "^19.2.5",
     "react-hook-form": "^7.56.1",
     "react-spinners": "^0.17.0",
     "rechart": "^0.0.1",
