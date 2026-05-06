@@ -10,7 +10,7 @@ import {
   SignUpButton,
 } from "@clerk/nextjs";
 import { Button } from "./ui/button";
-import { LayoutDashboard, PenBox } from "lucide-react";
+import { LayoutDashboard, PenBox, Users } from "lucide-react";
 import { checkUser } from "@/lib/checkUser";
 
 const Header = async () => {
@@ -44,6 +44,15 @@ const Header = async () => {
           </SignedOut>
 
           <SignedIn>
+            <Link
+              href="/budget-splitter"
+              className="text-gray-600 hover:text-blue-600"
+            >
+              <Button variant="outline" className="flex items-center gap-2">
+                <Users size={18} /> {/* Import 'Users' from lucide-react */}
+                <span className="hidden md:inline">Split Bill</span>
+              </Button>
+            </Link>
             <Link
               href="/dashboard"
               className="text-gray-600 hover:text-blue-600"

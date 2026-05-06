@@ -32,7 +32,7 @@ export const checkUser = async () => {
 
     return newUser;
   } catch (error) {
-    console.log(error.message);
+    console.error("checkUser error:", error);
   }
 };
 

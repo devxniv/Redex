@@ -9,16 +9,17 @@ datasource db {
 }
 
 model User {
-  id            String    @id @default(uuid())
-  clerkUserId   String    @unique // clerk user id
-  email         String    @unique
-  name          String?
-  imageUrl      String?
-  transactions  Transaction[]
-  accounts      Account[]
-  budgets       Budget[]
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  id           String        @id @default(uuid())
+  clerkUserId  String        @unique // clerk user id
+  email        String        @unique
+  name         String?
+  imageUrl     String?
+  transactions Transaction[]
+  accounts     Account[]
+  budgetGroups BudgetGroup[]
+  budgets      Budget[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
 
   @@map("users")
 }
@@ -40,40 +41,39 @@ model Account {
 }
 
 model Transaction {
-  id                String            @id @default(uuid())
-  type             TransactionType
-  amount           Decimal
-  description      String?
-  date             DateTime
-  category         String           
-  receiptUrl       String?
-  isRecurring      Boolean           @default(false)
+  id                String             @id @default(uuid())
+  type              TransactionType
+  amount            Decimal
+  description       String?
+  date              DateTime
+  category          String
+  receiptUrl        String?
+  isRecurring       Boolean            @default(false)
   recurringInterval RecurringInterval? // Only used if isRecurring is true
-  nextRecurringDate DateTime?         // Next date for recurring transaction
-  lastProcessed    DateTime?         // Last time this recurring transaction was processed
-  status           TransactionStatus  @default(COMPLETED)
-  merchantName       String?
-  userId           String
-  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  accountId        String
-  account          Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
+  nextRecurringDate DateTime? // Next date for recurring transaction
+  lastProcessed     DateTime? // Last time this recurring transaction was processed
+  status            TransactionStatus  @default(COMPLETED)
+  merchantName      String?
+  userId            String
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountId         String
+  account           Account            @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
 
   @@index([userId])
   @@index([accountId])
   @@map("transactions")
 }
 
-
 model Budget {
-  id          String       @id @default(uuid())
-  amount      Decimal
-  lastAlertSent DateTime?  // Track when the last alert was sent
-  userId      String       @unique
-  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  id            String    @id @default(uuid())
+  amount        Decimal
+  lastAlertSent DateTime? // Track when the last alert was sent
+  userId        String    @unique
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   @@index([userId])
   @@map("budgets")
@@ -102,3 +102,81 @@ enum RecurringInterval {
   YEARLY
 }
 
+model BudgetGroup {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String   @default("My Group")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members     BudgetMember[]
+  expenses    BudgetExpense[]
+  settlements BudgetSettlement[]
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("budget_groups")
+}
+
+model BudgetMember {
+  id      String      @id @default(cuid())
+  name    String
+  groupId String
+  group   BudgetGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  // Relations
+  expensesPaid BudgetExpense[] @relation("PaidBy")
+  splits       BudgetSplit[]   @relation("MemberSplits")
+
+  fromSettlements BudgetSettlement[] @relation("FromSettlements")
+  toSettlements   BudgetSettlement[] @relation("ToSettlements")
+
+  @@map("budget_members")
+}
+
+model BudgetExpense {
+  id        String   @id @default(cuid())
+  desc      String
+  amount    Float
+  category  String
+  paidBy    String // FK → BudgetMember.id
+  groupId   String
+  date      DateTime @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  group        BudgetGroup   @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  paidByMember BudgetMember  @relation("PaidBy", fields: [paidBy], references: [id],onDelete: Cascade)
+  splits       BudgetSplit[] @relation("ExpenseSplits")
+
+  @@map("budget_expenses")
+}
+
+model BudgetSplit {
+  id        String @id @default(cuid())
+  memberId  String
+  amount    Float
+  expenseId String
+
+  expense BudgetExpense @relation("ExpenseSplits", fields: [expenseId], references: [id], onDelete: Cascade)
+  member  BudgetMember  @relation("MemberSplits", fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@map("budget_splits")
+}
+
+model BudgetSettlement {
+  id        String   @id @default(cuid())
+  groupId   String
+  fromId    String
+  toId      String
+  amount    Float
+  settledAt DateTime @default(now())
+
+  group BudgetGroup  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  from  BudgetMember @relation("FromSettlements", fields: [fromId], references: [id], onDelete: Cascade)
+  to    BudgetMember @relation("ToSettlements", fields: [toId], references: [id], onDelete: Cascade)
+
+  @@index([groupId])
+  @@index([fromId])
+  @@index([toId])
+  @@map("budget_settlements")
+}

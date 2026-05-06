@@ -28,12 +28,12 @@ export async function getCurrentBudget(accountId) {
     const startOfMonth = new Date(
       currentDate.getFullYear(),
       currentDate.getMonth(),
-      1
+      1,
     );
     const endOfMonth = new Date(
       currentDate.getFullYear(),
       currentDate.getMonth() + 1,
-      0
+      0,
     );
 
     const expenses = await db.transaction.aggregate({
@@ -72,9 +72,7 @@ export async function updateBudget(amount) {
       where: { clerkUserId: userId },
     });
 
-    if (!user) {
-      throw new Error("User not found");
-    }
+    if (!user) throw new Error("User not found");
 
     // Update or create budget
     const budget = await db.budget.upsert({
