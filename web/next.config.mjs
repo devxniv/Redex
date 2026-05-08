@@ -14,6 +14,13 @@ const nextConfig = {
     serverActions: {
       bodySizeLimit: "4mb", // Adjust this (e.g., '2mb', '5mb') as needed
     },
+    optimizePackageImports: [
+      "lucide-react",
+      "recharts",
+      "@radix-ui/react-select",
+      "@radix-ui/react-dialog",
+      // add other @radix-ui packages you use
+    ],
   },
 };
 

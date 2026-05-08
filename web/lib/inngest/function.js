@@ -1,13 +1,13 @@
 import { inngest } from "./client";
 import { db } from "@/lib/prisma";
 import EmailTemplate from "@/emails/template";
-import { sendEmail } from "@/actions/send-email";
+import { sendEmail } from "@/lib/send-email";
 import {
   validateMonthlyReportData,
   validateBudgetAlertData,
 } from "@/lib/email-validation";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-
+import { defaultCategories } from "@/data/categories";
 // 1. Recurring Transaction Processing with Throttling
 export const processRecurringTransaction = inngest.createFunction(
   {
@@ -149,8 +149,25 @@ async function generateFinancialInsights(stats, month) {
       .map(([category, amount]) => `${category}: ₹${amount}`)
       .join(", ")}
 
-    Format the response as a JSON array of strings, like this:
-    ["insight 1", "insight 2", "insight 3"]
+    Format the response as a JSON array of objects. Each object must have:
+    - "text": the insight string (friendly and actionable)
+    - "category": one of "savings", "spending", "income", "warning", "tip"
+
+    Category meanings:
+    - "savings": insight about saving money or building reserves
+    - "spending": observation about a specific expense category
+    - "income": insight related to income or net balance
+    - "warning": a concern or risk that needs attention
+    - "tip": a general financial best-practice suggestion
+
+    Example format:
+    [
+      { "text": "Your food expenses are 40% of your budget...", "category": "warning" },
+      { "text": "You saved ₹5000 this month, great job!", "category": "savings" },
+      { "text": "Consider diversifying your income sources.", "category": "tip" }
+    ]
+
+    Return only the JSON array, no markdown, no explanation.
   `;
 
   try {
@@ -158,14 +175,29 @@ async function generateFinancialInsights(stats, month) {
     const response = result.response;
     const text = response.text();
     const cleanedText = text.replace(/```(?:json)?\n?/g, "").trim();
+    const parsed = JSON.parse(cleanedText);
 
-    return JSON.parse(cleanedText);
+    // Validate shape — fallback to wrapping plain strings if model drifts
+    return parsed.map((item) =>
+      typeof item === "string"
+        ? { text: item, category: "tip" }
+        : { text: item.text, category: item.category ?? "tip" },
+    );
   } catch (error) {
     console.error("Error generating insights:", error);
     return [
-      "Your highest expense category this month might need attention.",
-      "Consider setting up a budget for better financial management.",
-      "Track your recurring expenses to identify potential savings.",
+      {
+        text: "Your highest expense category this month might need attention.",
+        category: "warning",
+      },
+      {
+        text: "Consider setting up a budget for better financial management.",
+        category: "tip",
+      },
+      {
+        text: "Track your recurring expenses to identify potential savings.",
+        category: "savings",
+      },
     ];
   }
 }
@@ -180,8 +212,11 @@ export const generateMonthlyReports = inngest.createFunction(
       });
     });
 
+    console.log("Total users found:", users.length);
+    if (users.length === 0) {
+      return { status: "no-users-found" }; // 👈 you'll see this in output
+    }
     for (const user of users) {
-      // We wrap the individual user logic in a step so one failure doesn't stop the whole loop
       await step.run(`process-report-${user.id}`, async () => {
         const lastMonth = new Date();
         lastMonth.setMonth(lastMonth.getMonth() - 1);
@@ -191,37 +226,41 @@ export const generateMonthlyReports = inngest.createFunction(
 
         const stats = await getMonthlyStats(user.id, lastMonth);
 
+        // 👇 Log stats so you can see in Inngest if data is actually there
+        console.log(`Stats for ${user.email}:`, JSON.stringify(stats));
+
         let insights = [];
         try {
           insights = await generateFinancialInsights(stats, monthName);
         } catch (e) {
-          insights = ["Track your spending to see patterns."];
+          console.error("Insights generation failed:", e.message);
+          insights = [
+            { text: "Track your spending to see patterns.", category: "tip" },
+          ];
         }
 
-        // Validate data before rendering email
-        const emailData = {
-          stats,
-          month: monthName,
-          insights,
-        };
+        const emailData = { stats, month: monthName, insights };
 
         try {
-          validateMonthlyReportData({
-            userName: user.name,
-            data: emailData,
-          });
+          validateMonthlyReportData({ userName: user.name, data: emailData });
         } catch (validationError) {
+          // 👇 This is the most likely culprit — validation silently skips the email
           console.error(
-            `Skipping email for user ${user.id}: ${validationError.message}`,
+            `Validation failed for ${user.email}:`,
+            validationError.message,
           );
           return {
             skipped: true,
             reason: "Data validation failed",
             error: validationError.message,
+            // 👇 Add this so you see WHAT failed in Inngest logs
+            emailData: JSON.stringify(emailData),
+            status: "done",
+            processed: users.length,
           };
         }
 
-        await sendEmail({
+        const emailResult = await sendEmail({
           to: user.email,
           subject: `Your Monthly Financial Report - ${monthName}`,
           react: EmailTemplate({
@@ -230,6 +269,10 @@ export const generateMonthlyReports = inngest.createFunction(
             data: emailData,
           }),
         });
+
+        // 👇 Return result so Inngest shows confirmation
+        console.log(`Email sent to ${user.email}:`, emailResult);
+        return { sent: true, to: user.email, result: emailResult };
       });
     }
   },
@@ -375,10 +418,7 @@ async function getMonthlyStats(userId, month) {
   const transactions = await db.transaction.findMany({
     where: {
       userId,
-      date: {
-        gte: startDate,
-        lte: endDate,
-      },
+      date: { gte: startDate, lte: endDate },
     },
   });
 
@@ -386,9 +426,14 @@ async function getMonthlyStats(userId, month) {
     (stats, t) => {
       const amount = t.amount.toNumber();
       if (t.type === "EXPENSE") {
+        // 👇 Map ID → display name, fallback to raw ID if not found
+        const categoryName =
+          defaultCategories.find((c) => c.id === t.category)?.name ??
+          t.category;
+
         stats.totalExpenses += amount;
-        stats.byCategory[t.category] =
-          (stats.byCategory[t.category] || 0) + amount;
+        stats.byCategory[categoryName] =
+          (stats.byCategory[categoryName] || 0) + amount;
       } else {
         stats.totalIncome += amount;
       }
@@ -402,3 +447,8 @@ async function getMonthlyStats(userId, month) {
     },
   );
 }
+//triggerRecurringTransactions: Runs every day at midnight (0 0 * * *).
+
+//generateMonthlyReports: Runs at midnight on the 1st of every month (0 0 1 * *).
+
+//checkBudgetAlerts: Runs every 6 hours (0 */6 * * *).

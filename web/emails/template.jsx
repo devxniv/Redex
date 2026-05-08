@@ -10,25 +10,29 @@ import {
 } from "@react-email/components";
 import { validateEmailData } from "@/lib/email-validation";
 
-/**
- * Email Template Component
- * Renders financial report and alert emails with built-in data validation
- *
- * @param {Object} props
- * @param {string} props.userName - User's name
- * @param {string} props.type - Email type (monthly-report, budget-alert)
- * @param {Object} props.data - Email-specific data
- * @returns {JSX.Element|null} - Rendered email or error fallback
- */
+const categoryEmoji = {
+  savings: "💰",
+  spending: "🛍️",
+  income: "📈",
+  warning: "⚠️",
+  tip: "💡",
+};
+
+const categoryLabel = {
+  savings: "Savings",
+  spending: "Spending",
+  income: "Income",
+  warning: "Warning",
+  tip: "Tip",
+};
+
 export default function EmailTemplate({
   userName = "",
   type = "monthly-report",
   data = {},
 }) {
-  // Validate data before rendering to prevent partial/broken emails
   const validationResult = validateEmailData({ type, data, userName });
 
-  // Return error fallback if validation fails
   if (!validationResult) {
     console.error(
       `Cannot render email: validation failed for type="${type}", userName="${userName}"`,
@@ -48,7 +52,6 @@ export default function EmailTemplate({
     );
   }
 
-  // Use validated data
   const validatedData = validationResult.data;
   const stats = validatedData?.stats || {};
   const byCategory = stats.byCategory || {};
@@ -56,6 +59,11 @@ export default function EmailTemplate({
   const totalIncome = Number(stats.totalIncome) || 0;
   const totalExpenses = Number(stats.totalExpenses) || 0;
   const netSavings = totalIncome - totalExpenses;
+
+  // Normalize insights — handle both plain strings (legacy) and { text, category } objects
+  const normalizedInsights = insights.map((insight) =>
+    typeof insight === "string" ? { text: insight, category: "tip" } : insight,
+  );
 
   // 1. MONTHLY REPORT TEMPLATE
   if (type === "monthly-report") {
@@ -76,17 +84,26 @@ export default function EmailTemplate({
             <Section style={styles.statsContainer}>
               <div style={styles.stat}>
                 <Text style={styles.statLabel}>Total Income</Text>
-                <Text style={styles.statValue}>₹{totalIncome.toFixed(2)}</Text>
+                <Text style={{ ...styles.statValue, color: "#22c55e" }}>
+                  ₹{totalIncome.toFixed(2)}
+                </Text>
               </div>
               <div style={styles.stat}>
                 <Text style={styles.statLabel}>Total Expenses</Text>
-                <Text style={styles.statValue}>
+                <Text style={{ ...styles.statValue, color: "#ef4444" }}>
                   ₹{totalExpenses.toFixed(2)}
                 </Text>
               </div>
               <div style={styles.stat}>
                 <Text style={styles.statLabel}>Net Savings</Text>
-                <Text style={styles.statValue}>₹{netSavings.toFixed(2)}</Text>
+                <Text
+                  style={{
+                    ...styles.statValue,
+                    color: netSavings >= 0 ? "#22c55e" : "#ef4444",
+                  }}
+                >
+                  ₹{netSavings.toFixed(2)}
+                </Text>
               </div>
             </Section>
 
@@ -115,13 +132,21 @@ export default function EmailTemplate({
               </Section>
             )}
 
-            {insights.length > 0 && (
+            {normalizedInsights.length > 0 && (
               <Section style={styles.section}>
                 <Heading style={styles.heading}>Redex AI Insights</Heading>
-                {insights.map((insight, index) => (
-                  <Text key={index} style={styles.insightText}>
-                    • {insight}
-                  </Text>
+                {normalizedInsights.map((insight, index) => (
+                  <div key={index} style={styles.insightCard}>
+                    <div style={styles.insightHeader}>
+                      <span style={styles.insightEmoji}>
+                        {categoryEmoji[insight.category] ?? "💡"}
+                      </span>
+                      <span style={styles.insightCategory}>
+                        {categoryLabel[insight.category] ?? "Tip"}
+                      </span>
+                    </div>
+                    <Text style={styles.insightText}>{insight.text}</Text>
+                  </div>
                 ))}
               </Section>
             )}
@@ -169,7 +194,14 @@ export default function EmailTemplate({
               </div>
               <div style={styles.stat}>
                 <Text style={styles.statLabel}>Remaining</Text>
-                <Text style={styles.statValue}>₹{remaining.toFixed(2)}</Text>
+                <Text
+                  style={{
+                    ...styles.statValue,
+                    color: remaining >= 0 ? "#22c55e" : "#ef4444",
+                  }}
+                >
+                  ₹{remaining.toFixed(2)}
+                </Text>
               </div>
             </Section>
 
@@ -183,7 +215,7 @@ export default function EmailTemplate({
     );
   }
 
-  return null; // Fallback if type doesn't match
+  return null;
 }
 
 const styles = {
@@ -233,12 +265,6 @@ const styles = {
     fontWeight: "bold",
     color: "#1f2937",
   },
-  insightText: {
-    color: "#4b5563",
-    fontSize: "15px",
-    lineHeight: "22px",
-    marginBottom: "10px",
-  },
   statsContainer: {
     margin: "24px 0",
     padding: "20px",
@@ -253,6 +279,36 @@ const styles = {
     marginTop: "24px",
     paddingTop: "24px",
     borderTop: "1px solid #f3f4f6",
+  },
+  // ✅ New insight card styles
+  insightCard: {
+    backgroundColor: "#f9fafb",
+    border: "1px solid #e5e7eb",
+    borderRadius: "8px",
+    padding: "12px 16px",
+    marginBottom: "10px",
+  },
+  insightHeader: {
+    display: "flex",
+    alignItems: "center",
+    marginBottom: "4px",
+    gap: "6px",
+  },
+  insightEmoji: {
+    fontSize: "16px",
+  },
+  insightCategory: {
+    fontSize: "11px",
+    fontWeight: "700",
+    textTransform: "uppercase",
+    color: "#6b7280",
+    letterSpacing: "0.05em",
+  },
+  insightText: {
+    color: "#4b5563",
+    fontSize: "15px",
+    lineHeight: "22px",
+    margin: "0",
   },
   footer: {
     color: "#9ca3af",

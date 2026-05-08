@@ -33,9 +33,9 @@ export const transactionSchema = z
     description: z.string().trim().optional().default(""),
 
     // Fix for date input from forms
-    date: z
-      .string({ required_error: "Date is required" })
-      .pipe(z.coerce.date()), // Safely converts string → Date
+    date: z.coerce.date({
+      required_error: "Date is required",
+    }), // Safely converts string → Date
 
     accountId: z.string().min(1, "Account is required"),
 

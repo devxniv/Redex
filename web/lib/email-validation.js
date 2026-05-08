@@ -16,7 +16,15 @@ const MonthlyReportSchema = z.object({
       transactionCount: z.number().min(0).default(0),
     }),
     month: z.string().min(1, "Month is required"),
-    insights: z.array(z.string()).min(0).default([]),
+    insights: z
+      .array(
+        z.object({
+          text: z.string(),
+          category: z.enum(["savings", "spending", "income", "warning", "tip"]),
+        }),
+      )
+      .min(0)
+      .default([]), // 👈 updated to match new shape
   }),
 });
 

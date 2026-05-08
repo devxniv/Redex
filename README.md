@@ -10,6 +10,7 @@
 - [Architecture](#architecture)
 - [Android Companion App](#android-companion-app)
 - [Web Dashboard (Next.js)](#web-dashboard-nextjs)
+- [Budget Splitter](#budget-splitter)
 - [Backend & Data Pipeline](#backend--data-pipeline)
 - [Tech Stack](#tech-stack)
 - [Getting Started](#getting-started)
@@ -23,11 +24,12 @@
 Redex started as a web-only expense tracker, but manual data entry is the reason most expense apps fail — people forget to log, or find it tedious. To solve this, an Android companion app was built to capture financial transactions automatically from notifications, shared screenshots, and SMS — and forward them to the web platform in real time.
 
 **Key capabilities:**
-- - Automatic transaction capture from UPI/bank notifications and payment screenshots on Android
+- Automatic transaction capture from UPI/bank notifications and payment screenshots on Android
 - AI-powered data extraction from payment screenshots using Google Gemini
 - Full-featured web dashboard with charts, budget tracking, and transaction management
 - Offline-first Android architecture with local queue and background retry
 - Async job pipeline for recurring transactions, monthly email reports, and budget alerts
+- Group expense splitting with an advanced debt-minimisation algorithm
 
 ---
 
@@ -138,6 +140,7 @@ Located in `/web`. Built with Next.js 14 (App Router), Tailwind CSS, and shadcn/
 | `/dashboard` | Overview: balance, recent transactions, budget progress |
 | `/account/[id]` | Per-account transaction history with charts |
 | `/transaction/create` | Manual transaction entry + receipt scanner |
+| `/budget-splitter` | Group expense splitting with debt minimisation |
 
 ### Features
 
@@ -169,6 +172,48 @@ Arcjet (`lib/arcjet.js`) is integrated for API route protection against abuse.
 
 ---
 
+## Budget Splitter
+
+Located at `/budget-splitter`. A full group expense splitting tool that minimises the number of cash transfers needed to settle all debts.
+
+### How It Works
+
+Each user gets one persistent group. Members are added to the group, expenses are logged against the group, and the app calculates who owes whom using a greedy debt-minimisation algorithm — reducing n(n-1)/2 possible transfers down to the minimum needed.
+
+### Features
+
+- **Member management** — Add, rename, or remove members. Removal safely cascades and deletes all related expenses, splits, and settlements.
+- **Expense logging** — Record any expense with a description, amount, category (Food, Transport, Accommodation, Entertainment, Groceries, Healthcare, Activity, Other), and the member who paid.
+- **Equal splitting** — Amount is split equally across all members by default.
+- **Net balance view** — Each member's paid, owed, and settled amounts are displayed with a colour-coded net balance (green = is owed, red = owes).
+- **Debt simplification** — `simplifyDebts()` uses a greedy creditor/debtor pairing algorithm to produce the minimum number of transactions needed to zero all balances.
+- **Settlement tracking** — Mark a suggested payment as settled. Partial settlements are supported — paying ₹40 then ₹60 of a ₹100 debt is handled correctly without needing an exact amount match.
+- **Undo settlements** — Remove a settlement if it was marked paid by mistake.
+
+### Algorithm
+
+`getNetBalances` computes each member's net position:
+
+```
+balance = paid − owes + settled_adjustments
+```
+
+Settlements are applied symmetrically: the payer's balance increases (reduces what they owe), the payee's balance decreases (reduces what they're owed). This means partial payments accumulate naturally.
+
+`simplifyDebts` then greedily pairs the largest creditor with the largest debtor each round, producing the fewest possible transfers to zero all balances.
+
+### Database Models
+
+| Model | Purpose |
+|-------|---------|
+| `BudgetGroup` | One group per user, holds members, expenses, and settlements |
+| `BudgetMember` | A named participant in the group |
+| `BudgetExpense` | An expense with description, amount, category, and payer |
+| `BudgetSplit` | Each member's share of a specific expense |
+| `BudgetSettlement` | A recorded payment from one member to another |
+
+---
+
 ## Backend & Data Pipeline
 
 ### Transactions API (`/api/transactions/route.js`)
@@ -193,7 +238,7 @@ Runs every 6 hours. Checks each user's default account spending against their co
 
 ### Database (`prisma/schema.prisma`)
 
-PostgreSQL via Prisma ORM. Key models: `User`, `Account`, `Transaction`, `Budget`.
+PostgreSQL via Prisma ORM. Key models: `User`, `Account`, `Transaction`, `Budget`, `BudgetGroup`, `BudgetMember`, `BudgetExpense`, `BudgetSplit`, `BudgetSettlement`.
 
 ### Email (`emails/template.jsx`)
 
@@ -310,12 +355,18 @@ Redex/
     │   ├── (main)/             # Protected dashboard routes
     │   │   ├── dashboard/
     │   │   ├── account/[id]/
-    │   │   └── transaction/
+    │   │   ├── transaction/
+    │   │   └── budget-splitter/    # Group expense splitter
+    │   │       └── page.jsx
     │   └── api/
     │       ├── transactions/   # Android POST endpoint
     │       └── inngest/        # Inngest webhook
     ├── actions/                # Next.js server actions
+    │   └── splitter.budget.js  # Budget splitter CRUD actions
+    ├── components/
+    │   └── budget-splitter.jsx # Main budget splitter UI component
     ├── lib/
+    │   ├── budget-utils.js     # getNetBalances + simplifyDebts algorithm
     │   ├── inngest/function.js # Background jobs (recurring, reports, alerts)
     │   └── prisma.js
     ├── emails/template.jsx     # React Email templates

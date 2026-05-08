@@ -14,6 +14,8 @@ import {
 } from "@/data/landing";
 import HeroSection from "@/components/hero";
 import Link from "next/link";
+
+export const dynamic = "force-dynamic";
 export default function Home() {
   return (
     <div className="mt-30">

@@ -106,7 +106,11 @@ export default function BudgetSplitter({ initialGroup }) {
   const groupId = initialGroup.id;
   const memberTimeouts = useRef({});
   const transitionWatchdog = useRef(null);
+  const membersRef = useRef(members);
 
+  useEffect(() => {
+    membersRef.current = members;
+  }, [members]);
   const safeTransition = useCallback(
     (fn) => {
       clearTimeout(transitionWatchdog.current);
@@ -183,20 +187,21 @@ export default function BudgetSplitter({ initialGroup }) {
     clearTimeout(memberTimeouts.current[id]);
 
     memberTimeouts.current[id] = setTimeout(async () => {
+      console.log("⏱ Timeout fired for:", id);
       // 2. Read the current member from live state (avoids stale closure).
-      let memberToSave = null;
-      setMembers((current) => {
-        memberToSave = current.find((m) => m.id === id);
-        return current;
-      });
+      const memberToSave = membersRef.current.find((m) => m.id === id);
 
+      console.log("👤 Member to save:", memberToSave);
       // FIX #7: Use memberToSave.name (live state) instead of the closed-over
       // `name` variable, which may be stale if the user typed then deleted quickly.
       if (!memberToSave || !memberToSave.name.trim()) return;
 
       try {
         if (memberToSave._isTemp) {
-          const realMember = await addMemberAction(groupId, memberToSave.name.trim());
+          const realMember = await addMemberAction(
+            groupId,
+            memberToSave.name.trim(),
+          );
           setMembers((current) =>
             current.map((x) =>
               x.id === id ? { ...x, id: realMember.id, _isTemp: false } : x,
@@ -349,18 +354,16 @@ export default function BudgetSplitter({ initialGroup }) {
 
   // ── Settlement Handlers ──
   const handleMarkAsPaid = (settlement) => {
-    setSettlementsData((prev) => [
-      ...prev.filter(
-        (s) => !(s.fromId === settlement.fromId && s.toId === settlement.toId),
-      ),
-      {
-        fromId: settlement.fromId,
-        toId: settlement.toId,
-        amount: settlement.amount,
-        groupId,
-        settledAt: new Date().toISOString(),
-      },
-    ]);
+    const newSettlement = {
+      fromId: settlement.fromId,
+      toId: settlement.toId,
+      amount: settlement.amount,
+      groupId,
+      settledAt: new Date().toISOString(),
+    };
+
+    setSettlementsData((prev) => [...prev, newSettlement]);
+
     markSettlementAsPaid(
       groupId,
       settlement.fromId,
@@ -371,7 +374,11 @@ export default function BudgetSplitter({ initialGroup }) {
       setSettlementsData((prev) =>
         prev.filter(
           (s) =>
-            !(s.fromId === settlement.fromId && s.toId === settlement.toId),
+            !(
+              s.fromId === settlement.fromId &&
+              s.toId === settlement.toId &&
+              s.settledAt === newSettlement.settledAt
+            ),
         ),
       );
     });
@@ -755,7 +762,9 @@ export default function BudgetSplitter({ initialGroup }) {
                 >
                   <div
                     className="dot"
-                    style={{ background: m._isTemp ? "#4b5563" : memberColor(i) }}
+                    style={{
+                      background: m._isTemp ? "#4b5563" : memberColor(i),
+                    }}
                   />
                   <input
                     className="bs-input"
@@ -886,8 +895,7 @@ export default function BudgetSplitter({ initialGroup }) {
                   // so any entry in settlementsData for this pair means the
                   // full suggested amount has been covered.
                   const isSettled = settlementsData.some(
-                    (sd) =>
-                      sd.fromId === s.fromId && sd.toId === s.toId,
+                    (sd) => sd.fromId === s.fromId && sd.toId === s.toId,
                   );
                   return (
                     <div

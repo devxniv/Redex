@@ -103,7 +103,7 @@ export async function bulkDeleteTransactions(transactionIds) {
     });
 
     revalidatePath("/dashboard");
-    revalidatePath("/account/[id]");
+    revalidatePath("/account/[id]", "page");
 
     return { success: true };
   } catch (error) {

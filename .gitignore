@@ -1,11 +1,12 @@
-# --- SYSTEM & MISC ---
+web/.vscode/
+# SYSTEM & MISC
 .DS_Store
 *.pem
 *.tmp
 temp.txt
 notificationListener.txt
 
-# --- WEB / NEXT.JS / NODE ---
+#WEB / NEXT.JS / NODE
 # Dependencies
 **/node_modules
 .pnp

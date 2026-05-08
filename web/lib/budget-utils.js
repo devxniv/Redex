@@ -33,11 +33,13 @@ export const getNetBalances = (members, expenses = [], settlements = []) => {
   });
 
   // Single pass through settlements.
-  // Each record is counted once regardless of how many partial payments exist
-  // between a pair — the algorithm never needs to "recognise" a specific pair.
+  // Only the payer (fromId) needs a balance adjustment: their debt is reduced.
+  // The receiver (toId) already has a positive balance from paid - owes; a
+  // completed settlement doesn't change their net position — it just means
+  // they've physically received the money they were already owed.
   settlements.forEach((s) => {
     if (acc[s.fromId]) acc[s.fromId].settled += Number(s.amount) || 0;
-    if (acc[s.toId])   acc[s.toId].settled   -= Number(s.amount) || 0;
+    // toId intentionally omitted — creditor's net position is unchanged
   });
 
   return Object.values(acc).map((b) => ({
@@ -83,24 +85,24 @@ export function simplifyDebts(participants) {
 
   for (let i = 0; i < maxIterations; i++) {
     // Split into creditors (balance > 0) and debtors (balance < 0).
-    const creditors = balances.filter((b) => b.balance >  EPSILON);
-    const debtors   = balances.filter((b) => b.balance < -EPSILON);
+    const creditors = balances.filter((b) => b.balance > EPSILON);
+    const debtors = balances.filter((b) => b.balance < -EPSILON);
 
     if (creditors.length === 0 || debtors.length === 0) break;
 
     // Greedily pair the largest creditor with the largest debtor each round.
     // This minimises the total number of transactions.
     const maxC = creditors.reduce((a, b) => (a.balance > b.balance ? a : b));
-    const maxD = debtors.reduce((a, b)   => (a.balance < b.balance ? a : b));
+    const maxD = debtors.reduce((a, b) => (a.balance < b.balance ? a : b));
 
     const amount = Math.min(maxC.balance, -maxD.balance);
     if (amount < EPSILON) break;
 
     transactions.push({
       fromId: maxD.id,
-      toId:   maxC.id,
-      from:   maxD.name,
-      to:     maxC.name,
+      toId: maxC.id,
+      from: maxD.name,
+      to: maxC.name,
       amount: Math.round(amount * 100) / 100,
     });
 

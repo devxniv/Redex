@@ -100,43 +100,44 @@ export async function removeMember(memberId) {
   if (!memberId) throw new Error("Member ID is required");
 
   try {
-    // FIX #2: Correct deletion order to avoid FK constraint violations.
-
-    // Step 1: Delete all splits where this member is a participant
-    await db.budgetSplit.deleteMany({ where: { memberId } });
-
-    // Step 2: Delete splits that belong to expenses this member PAID FOR
-    // (child records must go before parent expenses)
+    // 1. Identify expenses paid by this member to clean up their splits first
     const expensesPaidByMember = await db.budgetExpense.findMany({
       where: { paidBy: memberId },
       select: { id: true },
     });
     const expenseIds = expensesPaidByMember.map((e) => e.id);
-    if (expenseIds.length > 0) {
-      await db.budgetSplit.deleteMany({
+
+    // 2. Wrap all deletions in a $transaction
+    await db.$transaction([
+      // Step A: Delete splits where this member was a participant
+      db.budgetSplit.deleteMany({ where: { memberId } }),
+
+      // Step B: Delete splits belonging to expenses this member paid for
+      db.budgetSplit.deleteMany({
         where: { expenseId: { in: expenseIds } },
-      });
-    }
+      }),
 
-    // Step 3: Delete all settlements where they are involved
-    await db.budgetSettlement.deleteMany({
-      where: { OR: [{ fromId: memberId }, { toId: memberId }] },
-    });
+      // Step C: Delete all settlements involving this member
+      db.budgetSettlement.deleteMany({
+        where: { OR: [{ fromId: memberId }, { toId: memberId }] },
+      }),
 
-    // Step 4: Delete all expenses that this member paid for
-    await db.budgetExpense.deleteMany({ where: { paidBy: memberId } });
+      // Step D: Delete all expenses paid by this member
+      db.budgetExpense.deleteMany({ where: { paidBy: memberId } }),
 
-    // Step 5: Now that all links are gone, delete the member
-    await db.budgetMember.delete({ where: { id: memberId } });
+      // Step E: Finally, delete the member itself
+      db.budgetMember.delete({ where: { id: memberId } }),
+    ]);
 
     revalidatePath("/budget-splitter");
+    return { success: true };
   } catch (error) {
     if (error.code === "P2025") {
       console.warn(`Member ${memberId} already deleted`);
       revalidatePath("/budget-splitter");
       return;
     }
-    console.error("Prisma Delete Error:", error);
+    console.error("Prisma Transaction Delete Error:", error);
     throw error;
   }
 }
@@ -196,38 +197,17 @@ export async function markSettlementAsPaid(groupId, fromId, toId, amount) {
   const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  if (!groupId || !fromId || !toId || !amount) {
-    throw new Error("Missing required fields for settlement");
-  }
-
-  const currentUser = await db.user.findUnique({
-    where: { clerkUserId: userId },
-    select: { id: true },
-  });
-
-  if (!currentUser) throw new Error("User not found");
-
-  const group = await db.budgetGroup.findUnique({
-    where: { id: groupId, userId: currentUser.id },
-  });
-
-  if (!group) throw new Error("Group not found or unauthorized");
-
+  // Always create a new record so partial payments accumulate
   try {
-    const existing = await db.budgetSettlement.findFirst({
-      where: { groupId, fromId, toId },
+    await db.budgetSettlement.create({
+      data: {
+        groupId,
+        fromId,
+        toId,
+        amount: Number(amount),
+        settledAt: new Date(),
+      },
     });
-
-    if (existing) {
-      await db.budgetSettlement.update({
-        where: { id: existing.id },
-        data: { amount: Number(amount), settledAt: new Date() },
-      });
-    } else {
-      await db.budgetSettlement.create({
-        data: { groupId, fromId, toId, amount: Number(amount) },
-      });
-    }
   } catch (error) {
     console.error("Failed to mark settlement as paid:", error);
     throw error;
@@ -241,29 +221,19 @@ export async function removeSettlement(groupId, fromId, toId) {
   const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  if (!groupId || !fromId || !toId) {
-    throw new Error("Missing required fields for removeSettlement");
-  }
-
   try {
-    // FIX #1 (cont): Use findFirst + delete by id instead of the composite
-    // unique key, for the same reason as markSettlementAsPaid above.
-    const existing = await db.budgetSettlement.findFirst({
+    // Find only the latest payment for this specific pair
+    const latest = await db.budgetSettlement.findFirst({
       where: { groupId, fromId, toId },
+      orderBy: { settledAt: "desc" },
     });
 
-    if (existing) {
-      await db.budgetSettlement.delete({ where: { id: existing.id } });
-    } else {
-      console.warn("Settlement already removed");
+    if (latest) {
+      await db.budgetSettlement.delete({ where: { id: latest.id } });
     }
   } catch (error) {
-    if (error.code === "P2025") {
-      console.warn("Settlement already removed");
-    } else {
-      console.error("Error removing settlement:", error);
-      throw error;
-    }
+    console.error("Error removing settlement:", error);
+    throw error;
   }
 
   revalidatePath("/budget-splitter");
