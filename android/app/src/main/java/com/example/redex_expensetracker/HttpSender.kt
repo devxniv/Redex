@@ -108,6 +108,11 @@ object HttpSender {
 
         return@withContext try {
             client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    Log.e(TAG, "Server returned error: ${response.code} ${response.message}")
+                    val body = response.body?.string()
+                    Log.e(TAG, "Error body: $body")
+                }
                 response.isSuccessful
             }
         } catch (e: Exception) {

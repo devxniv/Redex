@@ -60,6 +60,12 @@ object GeminiParser {
           A transaction is anything where money is spent, received, or moved. 
           If you see an amount and a merchant/bank name, it IS a transaction.
           
+          Guidelines for merchantName:
+          - For EXPENSE: This is the person or business who RECEIVED the money (the "To" field).
+          - For INCOME: This is the person or business who SENT the money (the "From" field).
+          - Clean the name: Remove prefixes like "Paid to", "Sent to", "Received from", or "To:".
+          - Do NOT include the user's own name as the merchantName.
+          
           If the date is relative (e.g. "Today", "Yesterday", "2 days ago"), 
           convert it to YYYY-MM-DD based on today's date ($today).
           
@@ -268,12 +274,17 @@ object GeminiParser {
 
             val prompt = getPromptPrefix() + """
                 This is a screenshot from a UPI or banking app.
-                It could be a payment sent (EXPENSE) OR money received (INCOME).
-                Look carefully at the screen:
-                - If it shows "You paid", "Paid to", "Sent to", "Debited" → type is EXPENSE
-                - If it shows "You received", "Received from", "Credited", "paid you" → type is INCOME
-                Determine the correct type from the actual content, do NOT assume.
-                Return a single JSON object, NOT an array.
+                Look for:
+                1. The Amount: Usually preceded by ₹ or Rs.
+                2. The Type:
+                   - "You paid", "Paid to", "Sent to", "Debited", "Transfer to" → type is EXPENSE
+                   - "You received", "Received from", "Credited", "paid you", "Transfer from" → type is INCOME
+                3. The Other Party (merchantName):
+                   - If EXPENSE, look for the name after "To" or "Paid to".
+                   - If INCOME, look for the name after "From" or "Received from".
+                   - If there's a big name at the top and "Completed" below, that big name is usually the merchantName.
+                
+                Return a single JSON object. Clean the merchantName to be JUST the name.
             """.trimIndent()
 
             try {

@@ -1,22 +1,19 @@
-import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { getOrCreateGroup } from "@/actions/splitter.budget";
 import BudgetSplitter from "@/components/budget-splitter";
 
 export default async function BudgetSplitterPage() {
-  // ✅ Next.js 15 Fix: Destructure directly from the awaited auth() call.
-  // This ensures that internal headers/cookies are handled asynchronously.
-  const { userId } = await auth();
-
-  if (!userId) {
-    redirect("/sign-in");
-  }
-
   let initialGroup;
+
   try {
-    // Ensure this action also awaits auth() internally if it checks for userId
+    // Single point of entry: auth check happens inside this action
     initialGroup = await getOrCreateGroup();
   } catch (error) {
+    // If the error is an auth failure, redirect to sign-in
+    if (error.message === "Unauthorized") {
+      redirect("/sign-in");
+    }
+
     console.error("Failed to load budget group:", error);
     return (
       <div

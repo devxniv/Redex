@@ -280,8 +280,8 @@ export const generateMonthlyReports = inngest.createFunction(
 
 // 3. Budget Alerts with Event Batching
 export const checkBudgetAlerts = inngest.createFunction(
-  { name: "Check Budget Alerts" },
-  { cron: "0 */6 * * *" }, // Every 6 hours
+  { id: "check-budget-alerts", name: "Check Budget Alerts", retries: 3 },
+  { cron: "0 */6 * * *" },
   async ({ step }) => {
     const budgets = await step.run("fetch-budgets", async () => {
       return await db.budget.findMany({
@@ -289,9 +289,7 @@ export const checkBudgetAlerts = inngest.createFunction(
           user: {
             include: {
               accounts: {
-                where: {
-                  isDefault: true,
-                },
+                where: { isDefault: true },
               },
             },
           },
@@ -301,73 +299,97 @@ export const checkBudgetAlerts = inngest.createFunction(
 
     for (const budget of budgets) {
       const defaultAccount = budget.user.accounts[0];
-      if (!defaultAccount) continue; // Skip if no default account
+      if (!defaultAccount) continue;
 
       await step.run(`check-budget-${budget.id}`, async () => {
-        const startDate = new Date();
-        startDate.setDate(1); // Start of current month
+        const budgetAmount = Number(budget.amount);
 
-        // Calculate total expenses for the default account only
+        if (budgetAmount <= 0) {
+          console.warn(`Budget ${budget.id} has invalid amount, skipping.`);
+          return { skipped: "invalid budget amount", budgetAmount };
+        }
+
+        const startDate = new Date();
+        startDate.setDate(1);
+        startDate.setHours(0, 0, 0, 0);
+
         const expenses = await db.transaction.aggregate({
           where: {
             userId: budget.userId,
-            accountId: defaultAccount.id, // Only consider default account
+            accountId: defaultAccount.id,
             type: "EXPENSE",
-            date: {
-              gte: startDate,
-            },
+            date: { gte: startDate },
           },
-          _sum: {
-            amount: true,
-          },
+          _sum: { amount: true },
         });
 
         const totalExpenses = expenses._sum.amount?.toNumber() || 0;
-        const budgetAmount = budget.amount;
         const percentageUsed = (totalExpenses / budgetAmount) * 100;
-
-        // Check if we should send an alert
-        if (
-          percentageUsed >= 80 && // Default threshold of 80%
+        const shouldAlert =
+          percentageUsed >= 80 &&
           (!budget.lastAlertSent ||
-            isNewMonth(new Date(budget.lastAlertSent), new Date()))
-        ) {
-          // Validate budget alert data before sending
-          const alertData = {
-            percentageUsed,
-            budgetAmount: Number(budgetAmount).toFixed(2),
-            totalExpenses: Number(totalExpenses).toFixed(2),
-            accountName: defaultAccount.name,
+            isNewMonth(new Date(budget.lastAlertSent), new Date()));
+
+        // Visible in Inngest step output instead of just console
+        const debugInfo = {
+          budgetId: budget.id,
+          budgetAmount,
+          totalExpenses,
+          percentageUsed: `${percentageUsed.toFixed(1)}%`,
+          shouldAlert,
+          lastAlertSent: budget.lastAlertSent,
+          isNewMonth:
+            !budget.lastAlertSent ||
+            isNewMonth(new Date(budget.lastAlertSent), new Date()),
+        };
+        console.log(`Budget check — ${budget.user.email}:`, debugInfo);
+
+        if (!shouldAlert) {
+          return {
+            skipped: "threshold not met or already alerted",
+            ...debugInfo,
           };
-
-          try {
-            validateBudgetAlertData({
-              userName: budget.user.name,
-              data: alertData,
-            });
-          } catch (validationError) {
-            console.error(
-              `Skipping budget alert for user ${budget.userId}: ${validationError.message}`,
-            );
-            return;
-          }
-
-          await sendEmail({
-            to: budget.user.email,
-            subject: `Budget Alert for ${defaultAccount.name}`,
-            react: EmailTemplate({
-              userName: budget.user.name,
-              type: "budget-alert",
-              data: alertData,
-            }),
-          });
-
-          // Update last alert sent
-          await db.budget.update({
-            where: { id: budget.id },
-            data: { lastAlertSent: new Date() },
-          });
         }
+
+        const alertData = {
+          percentageUsed,
+          budgetAmount,
+          totalExpenses,
+          accountName: defaultAccount.name,
+        };
+
+        try {
+          validateBudgetAlertData({
+            userName: budget.user.name,
+            data: alertData,
+          });
+        } catch (validationError) {
+          console.error(
+            `Validation failed for user ${budget.userId}: ${validationError.message}`,
+          );
+          return {
+            skipped: "validation failed",
+            error: validationError.message,
+            ...debugInfo,
+          };
+        }
+
+        await sendEmail({
+          to: budget.user.email,
+          subject: `Budget Alert for ${defaultAccount.name}`,
+          react: EmailTemplate({
+            userName: budget.user.name,
+            type: "budget-alert",
+            data: alertData,
+          }),
+        });
+
+        await db.budget.update({
+          where: { id: budget.id },
+          data: { lastAlertSent: new Date() },
+        });
+
+        return { sent: true, to: budget.user.email, ...debugInfo };
       });
     }
   },

@@ -20,14 +20,14 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         
-        val props = Properties()
-        val propsFile = rootProject.file("local.properties")
-        if (propsFile.exists()) {
-            props.load(propsFile.inputStream())
+        val localProperties = Properties()
+        val localPropertiesFile = rootProject.file("local.properties")
+        if (localPropertiesFile.exists()) {
+            localProperties.load(localPropertiesFile.inputStream())
         }
-        buildConfigField("String", "REDEX_API_SECRET", "\"${props.getProperty("REDEX_API_SECRET") ?: ""}\"")
-        buildConfigField("String", "GEMINI_API_KEY", "\"${props.getProperty("GEMINI_API_KEY") ?: ""}\"")
-        buildConfigField("String", "SERVER_URL", "\"${props.getProperty("SERVER_URL") ?: ""}\"")
+        buildConfigField("String", "REDEX_API_SECRET", "\"${localProperties.getProperty("REDEX_API_SECRET", "")}\"")
+        buildConfigField("String", "GEMINI_API_KEY", "\"${localProperties.getProperty("GEMINI_API_KEY", "")}\"")
+        buildConfigField("String", "SERVER_URL", "\"${localProperties.getProperty("SERVER_URL", "")}\"")
     }
 
     buildTypes {

@@ -32,7 +32,7 @@ const MonthlyReportSchema = z.object({
 const BudgetAlertSchema = z.object({
   userName: z.string().min(1, "User name is required"),
   data: z.object({
-    percentageUsed: z.number().min(0).max(100),
+    percentageUsed: z.number().min(0), // ✅ no upper cap
     budgetAmount: z.string().or(z.number()),
     totalExpenses: z.string().or(z.number()),
     accountName: z.string().min(1, "Account name is required"),

@@ -32,7 +32,6 @@ class MainActivity : AppCompatActivity() {
                     source = "test_manual",
                     type = "expense"
                 )
-                updatePendingCount()
             }
         }
 
@@ -46,7 +45,6 @@ class MainActivity : AppCompatActivity() {
 
         requestSmsPermission()
         checkNotificationAccess()
-        updatePendingCount()
     }
 
     private fun rebindNotificationListener() {
@@ -64,23 +62,10 @@ class MainActivity : AppCompatActivity() {
         android.widget.Toast.makeText(this, "Notification Listener Re-bound", android.widget.Toast.LENGTH_SHORT).show()
     }
 
-    private fun updatePendingCount() {
-        lifecycleScope.launch {
-            val count = AppDatabase.getDatabase(this@MainActivity).transactionDao().getAllPending().size
-            val tvPending = findViewById<TextView>(R.id.tvPendingSync)
-            if (count > 0) {
-                tvPending.text = "$count transactions pending sync"
-                tvPending.setTextColor(ContextCompat.getColor(this@MainActivity, android.R.color.holo_red_dark))
-            } else {
-                tvPending.text = "All transactions synced"
-                tvPending.setTextColor(ContextCompat.getColor(this@MainActivity, android.R.color.darker_gray))
-            }
-        }
-    }
+
 
     override fun onResume() {
         super.onResume()
-        updatePendingCount()
     }
 
     private fun requestSmsPermission() {

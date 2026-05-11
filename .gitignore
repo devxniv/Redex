@@ -1,4 +1,5 @@
 web/.vscode/
+web/notes
 # SYSTEM & MISC
 .DS_Store
 *.pem

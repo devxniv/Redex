@@ -144,28 +144,29 @@ export default function BudgetSplitter({ initialGroup }) {
 
   const suggestedSettlements = simplifyDebts(
     netBalances.map((b) => ({ id: b.id, name: b.name, balance: b.balance })),
+    // ✅ no second argument — getNetBalances already bakes settlements into balances
   );
 
   const totalSpend = expenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+
   const customTotal = Object.values(form.customSplits).reduce(
     (s, v) => s + (Number(v) || 0),
     0,
   );
   const customDiff = Number(form.amount) - customTotal;
+
   const isSplitInvalid =
     form.splitMode === "custom" && Math.abs(customDiff) > 0.01;
 
-  // Cleanup debounce timers and watchdog on unmount
+  // Cleanup debounce timers on unmount
   useEffect(() => {
     const timeouts = memberTimeouts.current;
-    const watchdog = transitionWatchdog.current;
     return () => {
       Object.values(timeouts).forEach(clearTimeout);
-      clearTimeout(watchdog);
     };
   }, []);
 
-  // Auto-set paidBy to first valid member
+  // Auto-set paidBy to first valid member so form is never submitted with empty paidBy
   useEffect(() => {
     if (validMembers.length > 0 && !form.paidBy) {
       setForm((prev) => ({ ...prev, paidBy: validMembers[0].id }));
@@ -354,6 +355,10 @@ export default function BudgetSplitter({ initialGroup }) {
 
   // ── Settlement Handlers ──
   const handleMarkAsPaid = (settlement) => {
+    const original = settlementsData.find(
+      (s) => s.fromId === settlement.fromId && s.toId === settlement.toId,
+    );
+
     const newSettlement = {
       fromId: settlement.fromId,
       toId: settlement.toId,
@@ -362,7 +367,14 @@ export default function BudgetSplitter({ initialGroup }) {
       settledAt: new Date().toISOString(),
     };
 
-    setSettlementsData((prev) => [...prev, newSettlement]);
+    // Replace existing entry instead of appending
+    setSettlementsData((prev) =>
+      prev.map((s) =>
+        s.fromId === settlement.fromId && s.toId === settlement.toId
+          ? newSettlement
+          : s,
+      ),
+    );
 
     markSettlementAsPaid(
       groupId,
@@ -371,41 +383,36 @@ export default function BudgetSplitter({ initialGroup }) {
       settlement.amount,
     ).catch((err) => {
       console.error("Failed to mark settlement as paid:", err);
+      // Restore the original entry on failure
       setSettlementsData((prev) =>
-        prev.filter(
-          (s) =>
-            !(
-              s.fromId === settlement.fromId &&
-              s.toId === settlement.toId &&
-              s.settledAt === newSettlement.settledAt
-            ),
+        prev.map((s) =>
+          s.fromId === settlement.fromId && s.toId === settlement.toId
+            ? original
+            : s,
         ),
       );
     });
   };
 
   const handleUndoPaid = (settlement) => {
+    const original = settlementsData.find(
+      (s) => s.fromId === settlement.fromId && s.toId === settlement.toId,
+    );
+
     setSettlementsData((prev) =>
       prev.filter(
         (s) => !(s.fromId === settlement.fromId && s.toId === settlement.toId),
       ),
     );
+
     removeSettlementAction(groupId, settlement.fromId, settlement.toId).catch(
       (err) => {
         console.error("Failed to undo settlement:", err);
-        setSettlementsData((prev) => [
-          ...prev,
-          {
-            fromId: settlement.fromId,
-            toId: settlement.toId,
-            amount: settlement.amount,
-            groupId,
-          },
-        ]);
+        // Restore the full original object on failure
+        setSettlementsData((prev) => [...prev, original]);
       },
     );
   };
-
   // ── Render ──
   return (
     <div style={{ fontFamily: "'DM Sans', sans-serif", width: "100%" }}>

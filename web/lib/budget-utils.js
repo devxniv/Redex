@@ -1,20 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// getNetBalances
-//
-// Returns an array of { id, name, paid, owes, settled, balance } — one entry
-// per member.  `balance` is the net position after all expenses AND all
-// settlements:  positive = is owed money,  negative = still owes money.
-//
-// Settlement accounting
-// ─────────────────────
-// Each settlement record { fromId, toId, amount } represents a completed
-// cash transfer.  We model it symmetrically:
-//   • the payer   (fromId) gets a POSITIVE adjustment  → reduces what they owe
-//   • the payee   (toId)   gets a NEGATIVE adjustment  → reduces what they're owed
-//
-// Multiple partial settlements between the same pair accumulate naturally
-// because we sum every record individually — there is no "exact match" lookup.
-// ─────────────────────────────────────────────────────────────────────────────
 export const getNetBalances = (members, expenses = [], settlements = []) => {
   const acc = {};
 
@@ -32,14 +15,9 @@ export const getNetBalances = (members, expenses = [], settlements = []) => {
     });
   });
 
-  // Single pass through settlements.
-  // Only the payer (fromId) needs a balance adjustment: their debt is reduced.
-  // The receiver (toId) already has a positive balance from paid - owes; a
-  // completed settlement doesn't change their net position — it just means
-  // they've physically received the money they were already owed.
   settlements.forEach((s) => {
+    // payer's debt reduces
     if (acc[s.fromId]) acc[s.fromId].settled += Number(s.amount) || 0;
-    // toId intentionally omitted — creditor's net position is unchanged
   });
 
   return Object.values(acc).map((b) => ({
@@ -50,24 +28,6 @@ export const getNetBalances = (members, expenses = [], settlements = []) => {
   }));
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// simplifyDebts
-//
-// Accepts the output of getNetBalances (which already has settlements baked in)
-// and greedily minimises the number of transfers needed to zero all balances.
-//
-// Key design decision — settlements are handled BEFORE this function runs:
-// ──────────────────────────────────────────────────────────────────────────
-// The old approach checked `isAlreadySettled` by looking for an exact amount
-// match inside the loop.  That breaks for partial payments: if A owes B ₹100
-// and pays ₹40 then ₹60, neither partial matches the ₹100 the algorithm
-// suggests, so both payments are ignored and the debt appears unsettled.
-//
-// The fix: getNetBalances already subtracts every settlement from each member's
-// balance before we arrive here.  simplifyDebts therefore always operates on
-// the *remaining* net debt — partial or full payments are automatically
-// reflected.  There is no settlement list to consult inside the loop at all.
-// ─────────────────────────────────────────────────────────────────────────────
 export function simplifyDebts(participants) {
   const EPSILON = 0.01;
 

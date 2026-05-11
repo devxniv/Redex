@@ -55,16 +55,10 @@ export async function addMember(groupId, name = "") {
   if (!groupId) throw new Error("Group ID is required");
 
   // FIX #6: Guard against empty names at the server level
-  const trimmedName = name.trim();
-  if (!trimmedName) throw new Error("Name cannot be empty");
 
   const member = await db.budgetMember.create({
-    data: {
-      name: trimmedName,
-      groupId,
-    },
+    data: { name: name.trim() || "", groupId },
   });
-
   revalidatePath("/budget-splitter");
   return member;
 }
@@ -225,7 +219,7 @@ export async function removeSettlement(groupId, fromId, toId) {
     // Find only the latest payment for this specific pair
     const latest = await db.budgetSettlement.findFirst({
       where: { groupId, fromId, toId },
-      orderBy: { settledAt: "desc" },
+      orderBy: { id: "desc" }, // ✅ cuid ids are time-ordered
     });
 
     if (latest) {
