@@ -20,6 +20,7 @@ export async function getCurrentBudget(accountId) {
     const budget = await db.budget.findFirst({
       where: {
         userId: user.id,
+        category: "default",
       },
     });
 
@@ -77,7 +78,10 @@ export async function updateBudget(amount) {
     // Update or create budget
     const budget = await db.budget.upsert({
       where: {
-        userId: user.id,
+        userId_category: {
+          userId: user.id,
+          category: "default",
+        },
       },
       update: {
         amount,
@@ -85,6 +89,7 @@ export async function updateBudget(amount) {
       create: {
         userId: user.id,
         amount,
+        category: "default",
       },
     });
 

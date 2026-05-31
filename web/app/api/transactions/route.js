@@ -21,7 +21,7 @@ export async function POST(req) {
     const date = body.date ? new Date(body.date) : new Date();
     const type = body.type === "INCOME" ? "INCOME" : "EXPENSE";
 
-    // ✅ Look up real user from DB
+    // Look up real user from DB
     const user = await db.user.findFirst({
       orderBy: { createdAt: "asc" },
     });
@@ -33,7 +33,7 @@ export async function POST(req) {
       );
     }
 
-    // ✅ Look up their default account
+    //  Look up their default account
     const defaultAccount = await db.account.findFirst({
       where: { userId: user.id, isDefault: true },
     });
@@ -58,12 +58,12 @@ export async function POST(req) {
           type: type,
           category: category,
           status: "COMPLETED",
-          userId: user.id, // ✅ real user
-          accountId: defaultAccount.id, // ✅ real account
+          userId: user.id, // real user
+          accountId: defaultAccount.id, // real account
         },
       });
 
-      // ✅ Correctly increment OR decrement based on type
+      // Correctly increment OR decrement based on type
       await tx.account.update({
         where: { id: defaultAccount.id },
         data: {

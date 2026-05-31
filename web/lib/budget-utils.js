@@ -1,14 +1,19 @@
 export const getNetBalances = (members, expenses = [], settlements = []) => {
   const acc = {};
 
-  // Initialise — settled is tracked separately so the UI can display it.
+  // Initialise — settled tracks amounts paid out by this person as settlements
+  // (Note: this is one-directional — only counts what the person has paid out,
+  // not what they've received, but the balance formula handles this correctly)
   members.forEach((m) => {
-    acc[m.id] = { id: m.id, name: m.name, paid: 0, owes: 0, settled: 0 };
+    acc[m.id] = { id: m.id, name: m.name, expensePaid: 0, paid: 0, owes: 0 };
   });
 
   // Single pass through expenses.
   expenses.forEach((e) => {
-    if (acc[e.paidBy]) acc[e.paidBy].paid += Number(e.amount) || 0;
+    if (acc[e.paidById]) {
+      acc[e.paidById].expensePaid += Number(e.amount) || 0; // ← track separately
+      acc[e.paidById].paid += Number(e.amount) || 0;
+    }
 
     (e.splits || []).forEach((s) => {
       if (acc[s.memberId]) acc[s.memberId].owes += Number(s.amount) || 0;
@@ -16,15 +21,15 @@ export const getNetBalances = (members, expenses = [], settlements = []) => {
   });
 
   settlements.forEach((s) => {
-    // payer's debt reduces
-    if (acc[s.fromId]) acc[s.fromId].settled += Number(s.amount) || 0;
+    // fromId is the one paying the settlement
+    if (acc[s.fromId]) acc[s.fromId].paid += Number(s.amount) || 0;
+    // toId is the one receiving — treat it as them owing less
+    if (acc[s.toId]) acc[s.toId].owes += Number(s.amount) || 0;
   });
 
   return Object.values(acc).map((b) => ({
     ...b,
-    // balance > 0  →  others still owe this person
-    // balance < 0  →  this person still owes others
-    balance: Math.round((b.paid - b.owes + b.settled) * 100) / 100,
+    balance: Math.round((b.paid - b.owes) * 100) / 100,
   }));
 };
 

@@ -17,6 +17,7 @@ import {
   removeExpense as removeExpenseAction,
   markSettlementAsPaid,
   removeSettlement as removeSettlementAction,
+  deleteSettlement as deleteSettlementAction,
 } from "@/actions/splitter.budget";
 
 // Logic Utilities
@@ -97,12 +98,12 @@ export default function BudgetSplitter({ initialGroup }) {
   const [form, setForm] = useState({
     desc: "",
     amount: "",
-    paidBy: "",
+    paidById: "",
     category: CATEGORIES[0],
     splitMode: "equal",
     customSplits: {},
   });
-
+  const [deletedSettlements, setDeletedSettlements] = useState([]);
   const groupId = initialGroup.id;
   const memberTimeouts = useRef({});
   const transitionWatchdog = useRef(null);
@@ -115,11 +116,15 @@ export default function BudgetSplitter({ initialGroup }) {
     (fn) => {
       clearTimeout(transitionWatchdog.current);
       transitionWatchdog.current = setTimeout(() => {
+        // FIX #6: Watchdog now takes visible action
         console.error(
           "[BudgetSplitter] startTransition exceeded 15 s. " +
-            "Possible hung server action (Next.js 15 sync-dynamic-apis?). Reloading.",
+            "Possible hung server action (Next.js 15 sync-dynamic-apis?).",
         );
-        window.location.reload();
+        alert(
+          "Server is taking longer than expected. Please check your connection and try again.",
+        );
+        // TODO: Replace alert with toast notification system
       }, 15_000);
 
       startTransition(async () => {
@@ -166,12 +171,12 @@ export default function BudgetSplitter({ initialGroup }) {
     };
   }, []);
 
-  // Auto-set paidBy to first valid member so form is never submitted with empty paidBy
+  // Auto-set paidById to first valid member so form is never submitted with empty paidById
   useEffect(() => {
-    if (validMembers.length > 0 && !form.paidBy) {
-      setForm((prev) => ({ ...prev, paidBy: validMembers[0].id }));
+    if (validMembers.length > 0 && !form.paidById) {
+      setForm((prev) => ({ ...prev, paidById: validMembers[0].id }));
     }
-  }, [validMembers, form.paidBy]);
+  }, [validMembers, form.paidById]);
 
   // ── Member Handlers ──
   const handleAddMember = () => {
@@ -235,21 +240,23 @@ export default function BudgetSplitter({ initialGroup }) {
     )
       return;
 
+    // FIX #5: Capture current state for rollback BEFORE any updates
+    const membersSnapshot = members;
+    const expensesSnapshot = expenses;
+    const settlementsSnapshot = settlementsData;
+
+    // Now apply the updates optimistically
     setMembers((m) => m.filter((x) => x.id !== id));
 
-    // FIX #3: Also remove expenses paid by this member AND strip this member
-    // from splits of remaining expenses so getNetBalances stays accurate.
     setExpenses((prev) =>
       prev
-        .filter((e) => e.paidBy !== id)
+        .filter((e) => e.paidById !== id)
         .map((e) => ({
           ...e,
           splits: (e.splits || []).filter((s) => s.memberId !== id),
         })),
     );
 
-    // FIX #10: Remove stale settlement records involving this member from
-    // local state so getNetBalances is not polluted.
     setSettlementsData((prev) =>
       prev.filter((s) => s.fromId !== id && s.toId !== id),
     );
@@ -258,7 +265,11 @@ export default function BudgetSplitter({ initialGroup }) {
       await removeMemberAction(id);
     } catch (error) {
       console.error("Failed to remove member:", error);
-      alert("Failed to remove member. Please refresh the page.");
+      // Restore state on failure
+      setMembers(membersSnapshot);
+      setExpenses(expensesSnapshot);
+      setSettlementsData(settlementsSnapshot);
+      alert("Failed to remove member. Please try again.");
     }
   };
 
@@ -279,10 +290,10 @@ export default function BudgetSplitter({ initialGroup }) {
   }, [form, validMembers]);
 
   const handleAddExpense = () => {
-    if (!form.desc?.trim() || !form.amount || !form.paidBy || isSplitInvalid)
+    if (!form.desc?.trim() || !form.amount || !form.paidById || isSplitInvalid)
       return;
 
-    const payer = validMembers.find((m) => m.id === form.paidBy);
+    const payer = validMembers.find((m) => m.id === form.paidById);
     if (!payer) {
       alert(
         "Selected payer is not yet saved. Please wait a moment and try again.",
@@ -292,15 +303,8 @@ export default function BudgetSplitter({ initialGroup }) {
 
     const splits = computeSplits();
 
-    const allSplitMembersExist = splits.every((s) =>
-      validMembers.some((m) => m.id === s.memberId),
-    );
-    if (!allSplitMembersExist) {
-      alert(
-        "Some members are not yet saved. Please wait a moment and try again.",
-      );
-      return;
-    }
+    // FIX #4: Check removed — computeSplits() already uses only validMembers
+    // (which filters _isTemp), so this check was always true and caught nothing
 
     const tempId = crypto.randomUUID();
     // FIX #5: Store ISO string in local state so formatDate can parse it
@@ -311,7 +315,7 @@ export default function BudgetSplitter({ initialGroup }) {
       id: tempId,
       desc: form.desc.trim(),
       amount: Number(form.amount),
-      paidBy: form.paidBy,
+      paidById: form.paidById,
       category: form.category,
       splits,
       createdAt: nowISO,
@@ -322,7 +326,7 @@ export default function BudgetSplitter({ initialGroup }) {
     setForm({
       desc: "",
       amount: "",
-      paidBy: validMembers[0]?.id || "",
+      paidById: validMembers[0]?.id || "",
       category: CATEGORIES[0],
       splitMode: "equal",
       customSplits: {},
@@ -342,8 +346,14 @@ export default function BudgetSplitter({ initialGroup }) {
   };
 
   const handleRemoveExpense = (id) => {
+    const snapshot = expenses; // synchronous capture — always correct
     setExpenses((e) => e.filter((x) => x.id !== id));
-    safeTransition(() => removeExpenseAction(id));
+    safeTransition(() =>
+      removeExpenseAction(id).catch((err) => {
+        console.error("Failed to remove expense:", err);
+        setExpenses(snapshot);
+      }),
+    );
   };
 
   const updateCustomSplit = (memberId, value) => {
@@ -367,14 +377,20 @@ export default function BudgetSplitter({ initialGroup }) {
       settledAt: new Date().toISOString(),
     };
 
-    // Replace existing entry instead of appending
-    setSettlementsData((prev) =>
-      prev.map((s) =>
-        s.fromId === settlement.fromId && s.toId === settlement.toId
-          ? newSettlement
-          : s,
-      ),
-    );
+    // Append if new, otherwise replace existing entry
+    setSettlementsData((prev) => {
+      const exists = prev.some(
+        (s) => s.fromId === settlement.fromId && s.toId === settlement.toId,
+      );
+      if (exists) {
+        return prev.map((s) =>
+          s.fromId === settlement.fromId && s.toId === settlement.toId
+            ? newSettlement
+            : s,
+        );
+      }
+      return [...prev, newSettlement];
+    });
 
     markSettlementAsPaid(
       groupId,
@@ -383,14 +399,25 @@ export default function BudgetSplitter({ initialGroup }) {
       settlement.amount,
     ).catch((err) => {
       console.error("Failed to mark settlement as paid:", err);
-      // Restore the original entry on failure
-      setSettlementsData((prev) =>
-        prev.map((s) =>
-          s.fromId === settlement.fromId && s.toId === settlement.toId
-            ? original
-            : s,
-        ),
-      );
+      // FIX #2: Handle undefined original (first-time settlement case)
+      if (original) {
+        // This was an edit — restore the original entry
+        setSettlementsData((prev) =>
+          prev.map((s) =>
+            s.fromId === settlement.fromId && s.toId === settlement.toId
+              ? original
+              : s,
+          ),
+        );
+      } else {
+        // This was a new entry — remove it
+        setSettlementsData((prev) =>
+          prev.filter(
+            (s) =>
+              !(s.fromId === settlement.fromId && s.toId === settlement.toId),
+          ),
+        );
+      }
     });
   };
 
@@ -518,9 +545,9 @@ export default function BudgetSplitter({ initialGroup }) {
                   >
                     <select
                       className="bs-input"
-                      value={form.paidBy}
+                      value={form.paidById}
                       onChange={(e) =>
-                        setForm({ ...form, paidBy: e.target.value })
+                        setForm({ ...form, paidById: e.target.value })
                       }
                     >
                       <option value="" disabled>
@@ -650,7 +677,7 @@ export default function BudgetSplitter({ initialGroup }) {
                       disabled={
                         !form.desc?.trim() ||
                         Number(form.amount) <= 0 ||
-                        !form.paidBy ||
+                        !form.paidById ||
                         isSplitInvalid ||
                         isPending
                       }
@@ -708,8 +735,8 @@ export default function BudgetSplitter({ initialGroup }) {
                         {/* FIX #8: Use createdAt exclusively — it is always
                             an ISO string from both server data and local state */}
                         {formatDate(exp.createdAt)} • Paid by{" "}
-                        {validMembers.find((m) => m.id === exp.paidBy)?.name ||
-                          "Unknown"}
+                        {validMembers.find((m) => m.id === exp.paidById)
+                          ?.name || "Unknown"}
                       </div>
                     </div>
                     <div
@@ -858,7 +885,7 @@ export default function BudgetSplitter({ initialGroup }) {
                           color: b.balance >= 0 ? "#6EE7B7" : "#FCA5A5",
                         }}
                       >
-                        {b.balance >= 0 ? "+" : ""}₹
+                        {b.balance >= 0 ? "+" : "-"}₹
                         {Math.abs(b.balance).toFixed(2)}
                       </span>
                     </div>
@@ -870,8 +897,7 @@ export default function BudgetSplitter({ initialGroup }) {
                         color: "#9ca3af",
                       }}
                     >
-                      <span>Paid: ₹{b.paid.toFixed(2)}</span>
-                      <span>Owes: ₹{b.owes.toFixed(2)}</span>
+                      <span>Paid: ₹{b.expensePaid.toFixed(2)}</span>
                     </div>
                   </div>
                 ))
@@ -882,86 +908,154 @@ export default function BudgetSplitter({ initialGroup }) {
           {/* ══ SETTLE TAB ══ */}
           {tab === "settle" && (
             <div>
-              {suggestedSettlements.length === 0 ? (
-                <div
-                  style={{
-                    textAlign: "center",
-                    padding: "60px 20px",
-                    color: "#6b7280",
-                    background: "#1a1d2e",
-                    borderRadius: 12,
-                  }}
-                >
-                  All settled! 🎉 No payments pending.
-                </div>
-              ) : (
-                suggestedSettlements.map((s) => {
-                  // FIX #4: Remove the brittle amount check that broke for
-                  // partial payments. simplifyDebts already operates on the
-                  // remaining balance (settlements baked in by getNetBalances),
-                  // so any entry in settlementsData for this pair means the
-                  // full suggested amount has been covered.
-                  const isSettled = settlementsData.some(
-                    (sd) => sd.fromId === s.fromId && sd.toId === s.toId,
-                  );
-                  return (
-                    <div
-                      key={`${s.fromId}-${s.toId}`}
-                      style={{
-                        background: "#1a1d2e",
-                        padding: 16,
-                        borderRadius: 12,
-                        marginBottom: 12,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        opacity: isSettled ? 0.5 : 1,
-                        transition: "opacity 0.2s",
-                      }}
-                    >
+              {(() => {
+                // FIX #2: Merge suggested settlements with settled ones so undo is always visible
+                // Settled rows should never disappear from the UI — they just change to "Undo" state
+                const allSettlements = [
+                  ...suggestedSettlements,
+                  ...settlementsData
+                    .filter(
+                      (sd) =>
+                        !suggestedSettlements.some(
+                          (s) => s.fromId === sd.fromId && s.toId === sd.toId,
+                        ),
+                    )
+                    .map((sd) => {
+                      const fromMember = validMembers.find(
+                        (m) => m.id === sd.fromId,
+                      );
+                      const toMember = validMembers.find(
+                        (m) => m.id === sd.toId,
+                      );
+                      return {
+                        fromId: sd.fromId,
+                        toId: sd.toId,
+                        from: fromMember?.name || "Unknown",
+                        to: toMember?.name || "Unknown",
+                        amount: sd.amount,
+                      };
+                    }),
+                ].filter(
+                  (s) =>
+                    !deletedSettlements.some(
+                      (d) => d.fromId === s.fromId && d.toId === s.toId,
+                    ),
+                );
+
+                return allSettlements.length === 0 ? (
+                  <div
+                    style={{
+                      textAlign: "center",
+                      padding: "60px 20px",
+                      color: "#6b7280",
+                      background: "#1a1d2e",
+                      borderRadius: 12,
+                    }}
+                  >
+                    All settled! 🎉 No payments pending.
+                  </div>
+                ) : (
+                  allSettlements.map((s) => {
+                    const isSettled = settlementsData.some(
+                      (sd) => sd.fromId === s.fromId && sd.toId === s.toId,
+                    );
+                    return (
                       <div
+                        key={`${s.fromId}-${s.toId}`}
                         style={{
+                          background: "#1a1d2e",
+                          padding: 16,
+                          borderRadius: 12,
+                          marginBottom: 12,
                           display: "flex",
                           alignItems: "center",
-                          gap: 8,
-                          flex: 1,
-                          flexWrap: "wrap",
+                          justifyContent: "space-between",
+                          opacity: isSettled ? 0.5 : 1,
+                          transition: "opacity 0.2s",
                         }}
                       >
-                        <span style={{ color: "#fff", fontWeight: 600 }}>
-                          {s.from}
-                        </span>
-                        <span style={{ color: "#6b7280" }}>pays</span>
-                        <span style={{ color: "#6EE7B7", fontWeight: 700 }}>
-                          ₹{s.amount.toFixed(2)}
-                        </span>
-                        <span style={{ color: "#6b7280" }}>to</span>
-                        <span style={{ color: "#fff", fontWeight: 600 }}>
-                          {s.to}
-                        </span>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            flex: 1,
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          <span style={{ color: "#fff", fontWeight: 600 }}>
+                            {s.from}
+                          </span>
+                          <span style={{ color: "#6b7280" }}>pays</span>
+                          <span style={{ color: "#6EE7B7", fontWeight: 700 }}>
+                            ₹{s.amount.toFixed(2)}
+                          </span>
+                          <span style={{ color: "#6b7280" }}>to</span>
+                          <span style={{ color: "#fff", fontWeight: 600 }}>
+                            {s.to}
+                          </span>
+                        </div>
+                        <button
+                          onClick={() =>
+                            isSettled ? handleUndoPaid(s) : handleMarkAsPaid(s)
+                          }
+                          style={{
+                            padding: "10px 20px",
+                            background: isSettled ? "#1a1d2e" : "#10b981",
+                            color: isSettled ? "#9ca3af" : "#fff",
+                            border: isSettled ? "1px solid #2a2d3e" : "none",
+                            borderRadius: 10,
+                            fontWeight: 600,
+                            cursor: "pointer",
+                            whiteSpace: "nowrap",
+                            flexShrink: 0,
+                          }}
+                        >
+                          {isSettled ? "↩ Undo" : "✓ Mark as Paid"}
+                        </button>
+                        {isSettled && (
+                          <button
+                            onClick={async () => {
+                              setSettlementsData((prev) =>
+                                prev.filter(
+                                  (sd) =>
+                                    !(
+                                      sd.fromId === s.fromId &&
+                                      sd.toId === s.toId
+                                    ),
+                                ),
+                              );
+                              setDeletedSettlements((prev) => [
+                                ...prev,
+                                { fromId: s.fromId, toId: s.toId },
+                              ]);
+                              await deleteSettlementAction(
+                                groupId,
+                                s.fromId,
+                                s.toId,
+                              );
+                            }}
+                            style={{
+                              padding: "10px 12px",
+                              background: "none",
+                              color: "#ef4444",
+                              border: "1px solid #3a2020",
+                              borderRadius: 10,
+                              fontWeight: 600,
+                              cursor: "pointer",
+                              flexShrink: 0,
+                              marginLeft: 6,
+                            }}
+                            title="Delete permanently"
+                          >
+                            ✕
+                          </button>
+                        )}
                       </div>
-                      <button
-                        onClick={() =>
-                          isSettled ? handleUndoPaid(s) : handleMarkAsPaid(s)
-                        }
-                        style={{
-                          padding: "10px 20px",
-                          background: isSettled ? "#1a1d2e" : "#10b981",
-                          color: isSettled ? "#9ca3af" : "#fff",
-                          border: isSettled ? "1px solid #2a2d3e" : "none",
-                          borderRadius: 10,
-                          fontWeight: 600,
-                          cursor: "pointer",
-                          whiteSpace: "nowrap",
-                          flexShrink: 0,
-                        }}
-                      >
-                        {isSettled ? "↩ Undo" : "✓ Mark as Paid"}
-                      </button>
-                    </div>
-                  );
-                })
-              )}
+                    );
+                  })
+                );
+              })()}
             </div>
           )}
         </div>

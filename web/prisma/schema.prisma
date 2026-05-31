@@ -10,13 +10,14 @@ datasource db {
 
 model User {
   id           String        @id @default(uuid())
-  clerkUserId  String        @unique // clerk user id
+  clerkUserId  String        @unique
   email        String        @unique
   name         String?
   imageUrl     String?
   transactions Transaction[]
   accounts     Account[]
   budgetGroups BudgetGroup[]
+  budgetMembers BudgetMember[]  // ← add this line
   budgets      Budget[]
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
@@ -28,7 +29,7 @@ model Account {
   id           String        @id @default(uuid())
   name         String
   type         AccountType
-  balance      Decimal       @default(0) // will ask inital balance while creating an account
+  balance      Decimal       @default(0)
   isDefault    Boolean       @default(false)
   userId       String
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -45,13 +46,14 @@ model Transaction {
   type              TransactionType
   amount            Decimal
   description       String?
+  // No @default here — caller must supply the transaction date explicitly
   date              DateTime
   category          String
   receiptUrl        String?
   isRecurring       Boolean            @default(false)
-  recurringInterval RecurringInterval? // Only used if isRecurring is true
-  nextRecurringDate DateTime? // Next date for recurring transaction
-  lastProcessed     DateTime? // Last time this recurring transaction was processed
+  recurringInterval RecurringInterval?
+  nextRecurringDate DateTime?
+  lastProcessed     DateTime?
   status            TransactionStatus  @default(COMPLETED)
   merchantName      String?
   userId            String
@@ -66,15 +68,24 @@ model Transaction {
   @@map("transactions")
 }
 
+// FIX 1: Removed @unique on userId so a user can have multiple category budgets.
+// Added an optional `category` field so each budget can target a spending category.
+// A @@unique([userId, category]) constraint prevents duplicate budgets for the
+// same user + category pair. NULL category = the user's global/overall budget.
 model Budget {
   id            String    @id @default(uuid())
   amount        Decimal
-  lastAlertSent DateTime? // Track when the last alert was sent
-  userId        String    @unique
+  // null = overall/global budget; a value = category-specific budget
+  category      String?
+  lastAlertSent DateTime?
+  userId        String
   user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
+  // FIX 1 (cont.): Ensures one budget per (user, category) pair.
+  // This replaces the old @unique on userId alone.
+  @@unique([userId, category])
   @@index([userId])
   @@map("budgets")
 }
@@ -105,7 +116,9 @@ enum RecurringInterval {
 model BudgetGroup {
   id        String   @id @default(cuid())
   userId    String
-  name      String   @default("My Group")
+  // FIX 2: Removed hardcoded @default("My Group") — group name should be
+  // supplied by the application layer, not defaulted at the DB level.
+  name      String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -117,35 +130,46 @@ model BudgetGroup {
   @@map("budget_groups")
 }
 
+// FIX 3: Added optional `userId` so a BudgetMember can be linked to a real
+// app User. This allows authentication checks, notifications, and balance
+// visibility for registered users, while still supporting guest members
+// (userId = null) for flexibility.
 model BudgetMember {
-  id      String      @id @default(cuid())
+  id      String  @id @default(cuid())
   name    String
   groupId String
-  group   BudgetGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  // null = guest/named-only member; set = linked to a real app User
+  userId  String?
 
-  // Relations
-  expensesPaid BudgetExpense[] @relation("PaidBy")
-  splits       BudgetSplit[]   @relation("MemberSplits")
+  group BudgetGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
 
+  expensesPaid    BudgetExpense[]    @relation("PaidBy")
+  splits          BudgetSplit[]      @relation("MemberSplits")
   fromSettlements BudgetSettlement[] @relation("FromSettlements")
   toSettlements   BudgetSettlement[] @relation("ToSettlements")
 
+  @@index([groupId])
+  @@index([userId])
   @@map("budget_members")
 }
 
+// FIX 4: Renamed `paidBy` → `paidById` to make it clear this field holds
+// a BudgetMember ID, not a name string. Also updated the relation field name.
 model BudgetExpense {
   id        String   @id @default(cuid())
   desc      String
   amount    Float
   category  String
-  paidBy    String // FK → BudgetMember.id
+  // FIX 4: renamed from `paidBy` to `paidById` for clarity
+  paidById  String
   groupId   String
   date      DateTime @default(now())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   group        BudgetGroup   @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  paidByMember BudgetMember  @relation("PaidBy", fields: [paidBy], references: [id],onDelete: Cascade)
+  paidByMember BudgetMember  @relation("PaidBy", fields: [paidById], references: [id], onDelete: Cascade)
   splits       BudgetSplit[] @relation("ExpenseSplits")
 
   @@map("budget_expenses")
@@ -160,6 +184,9 @@ model BudgetSplit {
   expense BudgetExpense @relation("ExpenseSplits", fields: [expenseId], references: [id], onDelete: Cascade)
   member  BudgetMember  @relation("MemberSplits", fields: [memberId], references: [id], onDelete: Cascade)
 
+  // FIX 5: Added @@unique to prevent a member from having duplicate split
+  // entries for the same expense, which would corrupt balance calculations.
+  @@unique([expenseId, memberId])
   @@map("budget_splits")
 }
 

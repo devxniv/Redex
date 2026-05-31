@@ -35,15 +35,3 @@ export const checkUser = async () => {
     console.error("checkUser error:", error);
   }
 };
-
-/* User logs in -> call checkUser()
-
-      ├── Is user logged in?
-      │     └── No → return null
-      │
-      └── Yes
-            ├── User found in db? 
-            │      └── Yes → return user
-            │
-            └── No → create new user → return new user
- */
