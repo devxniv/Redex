@@ -1,5 +1,7 @@
 # Redex — AI-Powered Expense Tracker
 
+🌐 Live API: View Live demo[https://redex-self.vercel.app/]
+
 > Automatic expense tracking with real-time Android capture, a Next.js web dashboard, and an async job pipeline. No manual entry required.
 
 ---
