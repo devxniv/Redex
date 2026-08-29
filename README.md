@@ -23,7 +23,7 @@
 
 ## Overview
 
-Redex started as a web-only expense tracker, but manual data entry is the reason most expense apps fail — people forget to log, or find it tedious. To solve this, an Android companion app was built to capture financial transactions automatically from notifications, shared screenshots, and SMS — and forward them to the web platform in real time.
+Redex started as a web-only expense tracker, but manual data entry is the reason most expense apps fail — people forget to log, or find it tedious. To solve this, an Android companion app was built to capture financial transactions automatically from notifications, shared screenshots — and forward them to the web platform in real time.
 
 **Key capabilities:**
 - Automatic transaction capture from UPI/bank notifications and payment screenshots on Android
