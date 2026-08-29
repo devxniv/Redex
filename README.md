@@ -41,9 +41,9 @@ Redex started as a web-only expense tracker, but manual data entry is the reason
 ┌─────────────────────────────────────────┐
 │           Android Companion App         │
 │                                         │
-│  Notification  Share Intake  SMS        │
-│   Listener      (Image)    Receiver     │
-│       └──────────┬──────────┘           │
+│      Notification      Share Intake     │
+│       Listener          (Image)         │
+│           └──────┬──────┘               │
 │              GeminiParser               │
 │           (AI Extraction)               │
 │                  │                      │
@@ -79,7 +79,7 @@ Located in `/android`. Built with Kotlin for Android (minSdk 27).
 
 ### What It Does
 
-The Android app runs silently in the background. It has three ways to capture a transaction:
+The Android app runs silently in the background. It has two ways to capture a transaction:
 
 **1. Notification Listener (`RedexNotificationListener.kt`)**
 Listens to payment notifications from apps like GPay, PhonePe, Paytm, and bank apps. When a financial notification arrives, it's forwarded to `GeminiParser` for AI extraction.
